@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>ANIEZE — 3D Gamified Atelier</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -31,24 +31,39 @@
 
     <nav class="hud-center" aria-label="Showroom zones">
       <button class="zone-btn active" data-zone="0">01 Atrium</button>
-      <button class="zone-btn" data-zone="1">02 Craft Corridor</button>
-      <button class="zone-btn" data-zone="2">03 Runway Vault</button>
+      <button class="zone-btn" data-zone="1">02 Corridor</button>
+      <button class="zone-btn" data-zone="2">03 Vault</button>
     </nav>
 
     <div class="hud-right">
       <button class="progress-pill" id="open-lookbook" title="View your collected pieces">
-        <span class="progress-text"><strong id="collected-count">0</strong> / 6 collected</span>
+        <span class="progress-text"><strong id="collected-count">0</strong> / 6 <span class="progress-word">collected</span></span>
         <span class="progress-bar-track"><span class="progress-bar-fill" id="progress-fill"></span></span>
       </button>
       <button class="action-pill" id="toggle-tour">Watch Film</button>
     </div>
   </header>
 
+  <!-- Mobile Virtual Thumb Joystick (touch & narrow screens) -->
+  <div class="mobile-joystick" id="mobile-joystick" aria-label="Walk joystick">
+    <div class="joy-ring">
+      <div class="joy-knob" id="joy-knob"></div>
+    </div>
+    <span class="joy-label">Move</span>
+  </div>
+
+  <!-- Mobile Quick Piece Stepper (Prev / Next monolith) -->
+  <div class="mobile-stepper" id="mobile-stepper" aria-label="Step between pieces">
+    <button class="step-btn" id="step-prev" aria-label="Previous piece">‹</button>
+    <span class="step-label" id="step-label">Pieces</span>
+    <button class="step-btn" id="step-next" aria-label="Next piece">›</button>
+  </div>
+
   <footer class="hud-bottom">
     <div class="controls-hint">
       <strong>WASD / Arrows</strong> to walk · <strong>Drag</strong> to look · <strong>Click any piece</strong> to inspect &amp; collect
     </div>
-    <a class="action-pill secondary" href="https://aniezeshop.com/" target="_blank" rel="noopener">aniezeshop.com</a>
+    <a class="action-pill secondary shop-pill" href="https://aniezeshop.com/" target="_blank" rel="noopener">aniezeshop.com</a>
   </footer>
 
   <!-- Cinematic Overlay (Tour Mode & Video Render) -->
@@ -77,8 +92,9 @@
     <div class="end-ig">@anieze._</div>
   </div>
 
-  <!-- Product Inspection Drawer -->
+  <!-- Product Inspection Drawer (Desktop side drawer / Mobile bottom sheet) -->
   <aside class="product-drawer" id="product-drawer" aria-hidden="true">
+    <div class="drawer-grabber" aria-hidden="true"></div>
     <div class="drawer-header">
       <span class="drawer-index" id="drawer-index">Piece 01 · The Atrium</span>
       <button class="drawer-close" id="drawer-close" aria-label="Close">✕</button>
@@ -107,7 +123,7 @@
       <div class="modal-head">
         <div>
           <div style="font-size:13px;font-weight:700;color:var(--paint-main)" id="modal-eyebrow">Your Atelier Bag</div>
-          <h2 style="font-size:24px;font-weight:600" id="modal-title">Discover all 6 pieces to unlock the drop</h2>
+          <h2 style="font-size:22px;font-weight:600" id="modal-title">Discover all 6 pieces to unlock the drop</h2>
         </div>
         <button class="drawer-close" id="modal-close">✕</button>
       </div>

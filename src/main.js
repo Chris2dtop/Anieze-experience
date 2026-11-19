@@ -6,6 +6,7 @@ const params = new URLSearchParams(window.location.search);
 const IS_RENDER = params.get('render') === '1';
 const IS_AUTOPLAY = params.get('autoplay') === '1';
 const CLEAN_SHOT = params.get('clean') === '1';
+const IS_MOBILE_UA = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.matchMedia('(pointer: coarse)').matches;
 if (IS_RENDER || CLEAN_SHOT) document.body.classList.add('render-mode');
 
 // ---------------------------------------------------------------------------
@@ -13,11 +14,12 @@ if (IS_RENDER || CLEAN_SHOT) document.body.classList.add('render-mode');
 // ---------------------------------------------------------------------------
 const wrap = document.getElementById('canvas-wrap');
 const renderer = new THREE.WebGLRenderer({
-  antialias: true,
+  antialias: !IS_MOBILE_UA,
   powerPreference: 'high-performance',
   preserveDrawingBuffer: IS_RENDER || CLEAN_SHOT
 });
-renderer.setPixelRatio(IS_RENDER ? 1 : Math.min(window.devicePixelRatio, 2));
+const maxDpr = IS_RENDER ? 1 : (IS_MOBILE_UA ? 1.75 : 2);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxDpr));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.02;
@@ -34,7 +36,13 @@ const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.05).texture;
 scene.environmentIntensity = 0.24;
 
-const camera = new THREE.PerspectiveCamera(44, window.innerWidth / window.innerHeight, 0.1, 140);
+function getAdaptiveFov() {
+  const portrait = window.innerHeight > window.innerWidth;
+  if (IS_RENDER && (params.get('vertical') === '1' || portrait)) return 50;
+  return portrait ? 56 : 44;
+}
+
+const camera = new THREE.PerspectiveCamera(getAdaptiveFov(), window.innerWidth / window.innerHeight, 0.1, 140);
 camera.position.set(0, 1.72, 18.0);
 
 // ---------------------------------------------------------------------------
@@ -166,11 +174,12 @@ addGarmentRail(5.4, 2.0, Math.PI / 2);
 const hemiLight = new THREE.HemisphereLight('#ffdcb8', '#140c08', 0.22);
 scene.add(hemiLight);
 
+const shadowRes = IS_MOBILE_UA ? 1024 : 2048;
 const sunSpot = new THREE.SpotLight('#ffd8a8', 95, 34, Math.PI / 4.8, 0.62, 1.4);
 sunSpot.position.set(2.8, 6.8, 14.5);
 sunSpot.target.position.set(-0.6, 0, 9.2);
 sunSpot.castShadow = true;
-sunSpot.shadow.mapSize.set(2048, 2048);
+sunSpot.shadow.mapSize.set(shadowRes, shadowRes);
 sunSpot.shadow.bias = -0.0005;
 scene.add(sunSpot, sunSpot.target);
 
@@ -186,12 +195,12 @@ const heroSpot = new THREE.SpotLight('#fff0dc', 130, 24, Math.PI / 6.8, 0.5, 1.2
 heroSpot.position.set(0, 7.2, -20.8);
 heroSpot.target.position.set(0, 1.65, -24.0);
 heroSpot.castShadow = true;
-heroSpot.shadow.mapSize.set(2048, 2048);
+heroSpot.shadow.mapSize.set(shadowRes, shadowRes);
 heroSpot.shadow.bias = -0.0004;
 scene.add(heroSpot, heroSpot.target);
 
 // ---------------------------------------------------------------------------
-// 4. Real ANIEZE Product Monoliths (Living Video Screens + Easy Swap Support)
+// 4. Real ANIEZE Product Monoliths (Living Video Screens + iOS Autoplay Unlock)
 // ---------------------------------------------------------------------------
 const texLoader = new THREE.TextureLoader();
 const interactables = [];
@@ -202,9 +211,17 @@ const collectedSet = new Set();
 function loadProductTex(url) {
   const t = texLoader.load(url);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   return t;
 }
+
+function unlockAllVideos() {
+  activeVideos.forEach(v => {
+    if (v.paused) v.play().catch(() => {});
+  });
+}
+window.addEventListener('touchstart', unlockAllVideos, { passive: true });
+window.addEventListener('pointerdown', unlockAllVideos, { passive: true });
 
 function attachVideoToMonolith(productId, videoUrl, label = 'Custom Video') {
   const node = productNodes.get(productId);
@@ -213,7 +230,12 @@ function attachVideoToMonolith(productId, videoUrl, label = 'Custom Video') {
   video.src = videoUrl;
   video.loop = true;
   video.muted = true;
+  video.defaultMuted = true;
+  video.autoplay = true;
   video.playsInline = true;
+  video.setAttribute('playsinline', '');
+  video.setAttribute('webkit-playsinline', '');
+  video.setAttribute('muted', '');
   video.crossOrigin = 'anonymous';
   video.preload = 'auto';
 
@@ -231,7 +253,7 @@ function attachVideoToMonolith(productId, videoUrl, label = 'Custom Video') {
     node.frontMat.needsUpdate = true;
     node.videoEl = video;
     node.sourceLabel = label;
-    activeVideos.push(video);
+    if (!activeVideos.includes(video)) activeVideos.push(video);
   }, { once: true });
 
   video.load();
@@ -355,7 +377,7 @@ fetch('./assets/videos/manifest.json')
   })
   .catch(() => {});
 
-const dustCount = 280;
+const dustCount = IS_MOBILE_UA ? 140 : 280;
 const dustGeo = new THREE.BufferGeometry();
 const dustPos = new Float32Array(dustCount * 3);
 for (let i = 0; i < dustCount; i++) {
@@ -399,10 +421,6 @@ const lookPath = new THREE.CatmullRomCurve3([
 ]);
 
 const IS_VERTICAL = params.get('vertical') === '1' || window.innerHeight > window.innerWidth;
-if (IS_VERTICAL) {
-  camera.fov = 50;
-  camera.updateProjectionMatrix();
-}
 const ACTIVE_DURATION = IS_VERTICAL ? 68.0 : TOUR_DURATION;
 
 function monolithShot(prod, dist) {
@@ -475,16 +493,21 @@ const CINEMA_BEATS = IS_VERTICAL ? [
 ];
 
 // ---------------------------------------------------------------------------
-// 6. Interactive Controls, Raycasting, Gamification & Live Video Swapper
+// 6. Interactive Controls, Multi-Touch Joystick, Piece Stepper & Gamification
 // ---------------------------------------------------------------------------
 let mode = (IS_RENDER || IS_AUTOPLAY) ? 'tour' : 'explore';
+if (mode === 'tour') document.body.classList.add('tour-active');
 let tourTime = 0;
 let yaw = 0, pitch = -0.02;
-let isDragging = false, lastX = 0, lastY = 0;
+let lookPointerId = null, lastX = 0, lastY = 0;
 let activeProductId = null;
 let showingAltImg = false;
 let targetCamPos = null, targetLookAt = null;
+let currentPieceIdx = -1;
 const keys = {};
+
+const joyVec = { x: 0, y: 0 };
+let joyPointerId = null;
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -514,6 +537,60 @@ const elModal = document.getElementById('lookbook-modal');
 const elModalGrid = document.getElementById('modal-grid');
 const elModalTitle = document.getElementById('modal-title');
 const elModalEyebrow = document.getElementById('modal-eyebrow');
+
+const elJoystick = document.getElementById('mobile-joystick');
+const elJoyKnob = document.getElementById('joy-knob');
+const elStepPrev = document.getElementById('step-prev');
+const elStepNext = document.getElementById('step-next');
+const elStepLabel = document.getElementById('step-label');
+
+if (elJoystick && elJoyKnob) {
+  const maxR = 32;
+  const updateJoy = (clientX, clientY) => {
+    const rect = elJoystick.querySelector('.joy-ring').getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    let dx = clientX - cx;
+    let dy = clientY - cy;
+    const dist = Math.hypot(dx, dy);
+    if (dist > maxR) {
+      dx = (dx / dist) * maxR;
+      dy = (dy / dist) * maxR;
+    }
+    elJoyKnob.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
+    joyVec.x = dx / maxR;
+    joyVec.y = -dy / maxR;
+    if (Math.abs(joyVec.x) > 0.08 || Math.abs(joyVec.y) > 0.08) {
+      targetCamPos = null;
+      targetLookAt = null;
+    }
+  };
+
+  elJoystick.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    joyPointerId = e.pointerId;
+    elJoystick.setPointerCapture(e.pointerId);
+    elJoyKnob.classList.add('active');
+    updateJoy(e.clientX, e.clientY);
+  });
+
+  elJoystick.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== joyPointerId) return;
+    e.stopPropagation();
+    updateJoy(e.clientX, e.clientY);
+  });
+
+  const resetJoy = (e) => {
+    if (e.pointerId !== joyPointerId) return;
+    joyPointerId = null;
+    joyVec.x = 0;
+    joyVec.y = 0;
+    elJoyKnob.classList.remove('active');
+    elJoyKnob.style.transform = 'translate3d(0, 0, 0)';
+  };
+  elJoystick.addEventListener('pointerup', resetJoy);
+  elJoystick.addEventListener('pointercancel', resetJoy);
+}
 
 const swapInput = document.getElementById('swap-video-input');
 const swapBtn = document.getElementById('btn-swap-video');
@@ -554,12 +631,53 @@ function renderLookbookGrid() {
 }
 renderLookbookGrid();
 
+function focusPiece(idx, openDrawer = false) {
+  const safeIdx = ((idx % ANIEZE_PRODUCTS.length) + ANIEZE_PRODUCTS.length) % ANIEZE_PRODUCTS.length;
+  currentPieceIdx = safeIdx;
+  const p = ANIEZE_PRODUCTS[safeIdx];
+  const node = productNodes.get(p.id);
+  if (!node) return;
+
+  if (elStepLabel) elStepLabel.textContent = `${p.index} / 06`;
+  const portrait = window.innerHeight > window.innerWidth;
+  const dist = p.id === 'elara-trench' ? (portrait ? 4.4 : 3.8) : (portrait ? 3.55 : 3.15);
+  const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), p.rotationY);
+  targetCamPos = new THREE.Vector3(p.position[0], 1.72, p.position[2]).addScaledVector(forward, dist);
+  targetLookAt = new THREE.Vector3(p.position[0], node.baseY - 0.08, p.position[2]);
+
+  const dir = targetLookAt.clone().sub(targetCamPos).normalize();
+  yaw = Math.atan2(-dir.x, -dir.z);
+  pitch = Math.asin(Math.max(-0.45, Math.min(0.45, dir.y)));
+
+  const zoneIdx = safeIdx < 2 ? 0 : (safeIdx < 4 ? 1 : 2);
+  document.querySelectorAll('.zone-btn').forEach(b => b.classList.toggle('active', Number(b.dataset.zone) === zoneIdx));
+
+  if (openDrawer) openProductDrawer(p.id);
+}
+
+if (elStepPrev && elStepNext) {
+  elStepPrev.addEventListener('click', () => {
+    mode = 'explore';
+    document.body.classList.remove('tour-active');
+    elDrawer.classList.remove('open');
+    focusPiece(currentPieceIdx <= 0 ? ANIEZE_PRODUCTS.length - 1 : currentPieceIdx - 1, false);
+  });
+  elStepNext.addEventListener('click', () => {
+    mode = 'explore';
+    document.body.classList.remove('tour-active');
+    elDrawer.classList.remove('open');
+    focusPiece(currentPieceIdx + 1, false);
+  });
+}
+
 function openProductDrawer(id) {
   const node = productNodes.get(id);
   if (!node) return;
   activeProductId = id;
   showingAltImg = false;
   const p = node.prod;
+  currentPieceIdx = ANIEZE_PRODUCTS.findIndex(item => item.id === id);
+  if (elStepLabel && currentPieceIdx >= 0) elStepLabel.textContent = `${p.index} / 06`;
 
   elDrawerIndex.textContent = `Piece ${p.index} · ${p.zone} · ${node.sourceLabel}`;
   elDrawerImg.src = p.frontImg;
@@ -575,8 +693,10 @@ function openProductDrawer(id) {
   elBtnCollect.classList.toggle('collected', isCol);
   elDrawer.classList.add('open');
 
+  const portrait = window.innerHeight > window.innerWidth;
+  const dist = p.id === 'elara-trench' ? (portrait ? 4.4 : 3.8) : (portrait ? 3.55 : 3.15);
   const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), p.rotationY);
-  targetCamPos = new THREE.Vector3(p.position[0], 1.75, p.position[2]).addScaledVector(forward, 3.15);
+  targetCamPos = new THREE.Vector3(p.position[0], 1.75, p.position[2]).addScaledVector(forward, dist);
   targetLookAt = new THREE.Vector3(p.position[0], node.baseY, p.position[2]);
 }
 
@@ -620,6 +740,7 @@ const ZONE_VIEWS = [
 document.querySelectorAll('.zone-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     mode = 'explore';
+    document.body.classList.remove('tour-active');
     elToggleTour.textContent = 'Watch Film';
     elCinemaOverlay.classList.remove('visible');
     elCinemaEndcard.classList.remove('show');
@@ -636,12 +757,14 @@ document.querySelectorAll('.zone-btn').forEach(btn => {
 elToggleTour.addEventListener('click', () => {
   if (mode === 'tour') {
     mode = 'explore';
+    document.body.classList.remove('tour-active');
     elToggleTour.textContent = 'Watch Film';
     elCinemaOverlay.classList.remove('visible');
     elCinemaEndcard.classList.remove('show');
   } else {
     mode = 'tour';
     tourTime = 0;
+    document.body.classList.add('tour-active');
     elDrawer.classList.remove('open');
     elToggleTour.textContent = 'Exit Film';
     elCinemaOverlay.classList.add('visible');
@@ -649,31 +772,32 @@ elToggleTour.addEventListener('click', () => {
 });
 
 renderer.domElement.addEventListener('pointerdown', (e) => {
-  if (mode !== 'explore') return;
-  isDragging = true;
+  if (mode !== 'explore' || e.pointerId === joyPointerId || lookPointerId !== null) return;
+  lookPointerId = e.pointerId;
   lastX = e.clientX;
   lastY = e.clientY;
   renderer.domElement.dataset.downX = e.clientX;
   renderer.domElement.dataset.downY = e.clientY;
 });
 window.addEventListener('pointermove', (e) => {
-  if (!isDragging || mode !== 'explore') return;
+  if (e.pointerId !== lookPointerId || mode !== 'explore') return;
   const dx = e.clientX - lastX;
   const dy = e.clientY - lastY;
   lastX = e.clientX;
   lastY = e.clientY;
   targetCamPos = null;
-  yaw -= dx * 0.0032;
-  pitch = Math.max(-0.45, Math.min(0.45, pitch - dy * 0.0025));
+  const sens = IS_MOBILE_UA ? 0.0046 : 0.0032;
+  yaw -= dx * sens;
+  pitch = Math.max(-0.45, Math.min(0.45, pitch - dy * (sens * 0.78)));
 });
-window.addEventListener('pointerup', (e) => {
-  if (!isDragging) return;
-  isDragging = false;
+const endLook = (e) => {
+  if (e.pointerId !== lookPointerId) return;
+  lookPointerId = null;
   const moved = Math.hypot(
     e.clientX - Number(renderer.domElement.dataset.downX || 0),
     e.clientY - Number(renderer.domElement.dataset.downY || 0)
   );
-  if (moved < 6 && mode === 'explore') {
+  if (moved < 10 && mode === 'explore') {
     pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
     pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(pointer, camera);
@@ -682,13 +806,16 @@ window.addEventListener('pointerup', (e) => {
       openProductDrawer(hits[0].object.userData.productId);
     }
   }
-});
+};
+window.addEventListener('pointerup', endLook);
+window.addEventListener('pointercancel', () => { lookPointerId = null; });
 
 window.addEventListener('keydown', (e) => { keys[e.code] = true; });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
+  camera.fov = getAdaptiveFov();
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
@@ -715,7 +842,7 @@ function updateSceneAtTime(t) {
 
   if (mode === 'tour') {
     let pos, look;
-    if (IS_VERTICAL) {
+    if (IS_VERTICAL || window.innerHeight > window.innerWidth) {
       const sample = sampleVerticalCamera(t);
       pos = sample.pos;
       look = sample.look;
@@ -787,6 +914,8 @@ function animate() {
       if (keys.KeyS || keys.ArrowDown) camera.position.addScaledVector(fwd, -speed);
       if (keys.KeyA || keys.ArrowLeft) camera.position.addScaledVector(right, -speed);
       if (keys.KeyD || keys.ArrowRight) camera.position.addScaledVector(right, speed);
+      if (Math.abs(joyVec.y) > 0.05) camera.position.addScaledVector(fwd, speed * joyVec.y);
+      if (Math.abs(joyVec.x) > 0.05) camera.position.addScaledVector(right, speed * joyVec.x);
       camera.position.x = Math.max(-5.2, Math.min(5.2, camera.position.x));
       camera.position.z = Math.max(-27.5, Math.min(19.5, camera.position.z));
       camera.position.y = 1.72;
