@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ANIEZE — 3D Gamified Atelier</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Host+Grotesk:wght@300..800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./src/styles.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.174.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.174.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="canvas-wrap"></div>
+  <div class="film-overlay"></div>
+
+  <!-- Interactive HUD -->
+  <header class="hud-top">
+    <div class="brand-pill">
+      <img src="./assets/brand/logo-black.svg" alt="ANIEZE" />
+      <span class="divider"></span>
+      <span class="tag">Paris · 3D Atelier</span>
+    </div>
+
+    <nav class="hud-center" aria-label="Showroom zones">
+      <button class="zone-btn active" data-zone="0">01 Atrium</button>
+      <button class="zone-btn" data-zone="1">02 Craft Corridor</button>
+      <button class="zone-btn" data-zone="2">03 Runway Vault</button>
+    </nav>
+
+    <div class="hud-right">
+      <button class="progress-pill" id="open-lookbook" title="View your collected pieces">
+        <span class="progress-text"><strong id="collected-count">0</strong> / 6 collected</span>
+        <span class="progress-bar-track"><span class="progress-bar-fill" id="progress-fill"></span></span>
+      </button>
+      <button class="action-pill" id="toggle-tour">Watch Film</button>
+    </div>
+  </header>
+
+  <footer class="hud-bottom">
+    <div class="controls-hint">
+      <strong>WASD / Arrows</strong> to walk · <strong>Drag</strong> to look · <strong>Click any piece</strong> to inspect &amp; collect
+    </div>
+    <a class="action-pill secondary" href="https://aniezeshop.com/" target="_blank" rel="noopener">aniezeshop.com</a>
+  </footer>
+
+  <!-- Cinematic Overlay (Tour Mode & Video Render) -->
+  <div class="cinema-overlay" id="cinema-overlay">
+    <div class="cinema-top">
+      <img class="cinema-logo" src="./assets/brand/logo-light.svg" alt="ANIEZE" />
+      <div class="cinema-zone-badge">
+        <span class="cinema-dot"></span>
+        <span id="cinema-zone-label">01 · The Atrium</span>
+      </div>
+    </div>
+    <div class="cinema-bottom">
+      <div class="cinema-card" id="cinema-card">
+        <div class="cinema-card-eyebrow" id="cinema-eyebrow">Piece 01 · Paris</div>
+        <div class="cinema-card-title" id="cinema-title">Shiny Jagaban Sweater</div>
+        <div class="cinema-card-sub" id="cinema-sub">Metallic-fleck heavy knit · Sculpted Agbada shoulders</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Endcard (last 3 seconds of film) -->
+  <div class="cinema-endcard" id="cinema-endcard">
+    <img src="./assets/brand/logo-black.svg" alt="ANIEZE" />
+    <div class="end-sub">Paris · Interactive 3D Atelier</div>
+    <div class="end-url">aniezeshop.com</div>
+    <div class="end-ig">@anieze._</div>
+  </div>
+
+  <!-- Product Inspection Drawer -->
+  <aside class="product-drawer" id="product-drawer" aria-hidden="true">
+    <div class="drawer-header">
+      <span class="drawer-index" id="drawer-index">Piece 01 · The Atrium</span>
+      <button class="drawer-close" id="drawer-close" aria-label="Close">✕</button>
+    </div>
+    <div class="drawer-photo-wrap">
+      <img id="drawer-img" src="" alt="" />
+      <button class="angle-toggle" id="angle-toggle">Switch angle</button>
+    </div>
+    <div class="drawer-title" id="drawer-title"></div>
+    <div class="drawer-meta">
+      <span class="drawer-price" id="drawer-price"></span>
+      <span class="drawer-material" id="drawer-material"></span>
+    </div>
+    <p class="drawer-story" id="drawer-story"></p>
+    <div class="drawer-actions">
+      <button class="btn-collect" id="btn-collect">Collect piece (+1)</button>
+      <a class="btn-shop" id="btn-shop" href="https://aniezeshop.com/" target="_blank" rel="noopener">Shop on aniezeshop.com</a>
+      <button class="action-pill secondary" id="btn-swap-video" style="width:100%;font-size:12.5px;padding:10px 14px;">Swap screen video (.mp4)</button>
+      <input type="file" id="swap-video-input" accept="video/mp4,video/webm" style="display:none" />
+    </div>
+  </aside>
+
+  <!-- Personal Drop Lookbook Modal -->
+  <div class="modal-backdrop" id="lookbook-modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--paint-main)" id="modal-eyebrow">Your Atelier Bag</div>
+          <h2 style="font-size:24px;font-weight:600" id="modal-title">Discover all 6 pieces to unlock the drop</h2>
+        </div>
+        <button class="drawer-close" id="modal-close">✕</button>
+      </div>
+      <div class="modal-grid" id="modal-grid"></div>
+      <a class="btn-shop" href="https://aniezeshop.com/" target="_blank" rel="noopener">Complete your look on aniezeshop.com</a>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

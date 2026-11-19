@@ -1,0 +1,28 @@
+{
+  "screens": {
+    "shiny-jagaban": {
+      "video": "assets/videos/jagaban_screen_1080p.mp4",
+      "sourceLabel": "Gemini Omni 1.2 · 1080p 360° Screen"
+    },
+    "nkisi-trench": {
+      "video": "assets/videos/nkisi_screen_1080p.mp4",
+      "sourceLabel": "Gemini Omni 1.2 · 1080p 360° Screen"
+    },
+    "oro-hoodie": {
+      "video": "assets/videos/ig_reel_01_loop.mp4",
+      "sourceLabel": "Instagram @anieze._ · Reel"
+    },
+    "arco-gilet": {
+      "video": "assets/videos/mosaique_02.mp4",
+      "sourceLabel": "MOSAÏQUE Orléans · Runway"
+    },
+    "zaya-jacket": {
+      "video": "assets/videos/ig_reel_02_loop.mp4",
+      "sourceLabel": "Instagram @anieze._ · Reel"
+    },
+    "elara-trench": {
+      "video": "assets/videos/elara_real_screen_1080p.mp4",
+      "sourceLabel": "ANIEZE Paris Boutique · Live Footage"
+    }
+  }
+}
