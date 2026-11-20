@@ -3,7 +3,20 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>ANIEZE — 3D Gamified Atelier</title>
+  <title>ANIEZE — Interactive 3D Atelier · Paris</title>
+  <meta name="description" content="Explore ANIEZE's interactive 3D Paris Atelier featuring live NOMAD runway looks, 360° couture screens, and collectible drops." />
+  <link rel="icon" type="image/svg+xml" href="./assets/brand/logo-black.svg" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="ANIEZE — Interactive 3D Atelier · Paris" />
+  <meta property="og:description" content="Walk the 3D showroom, inspect 6 live couture & NOMAD runway monoliths, and collect the drop." />
+  <meta property="og:url" content="https://chris2dtop.github.io/Anieze-experience/" />
+  <meta property="og:image" content="https://chris2dtop.github.io/Anieze-experience/assets/brand/og-preview.jpg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="ANIEZE — Interactive 3D Atelier · Paris" />
+  <meta name="twitter:description" content="Walk the 3D showroom, inspect 6 live couture & NOMAD runway monoliths, and collect the drop." />
+  <meta name="twitter:image" content="https://chris2dtop.github.io/Anieze-experience/assets/brand/og-preview.jpg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Host+Grotesk:wght@300..800&display=swap" rel="stylesheet" />
@@ -36,6 +49,9 @@
     </nav>
 
     <div class="hud-right">
+      <button class="icon-pill" id="toggle-audio" aria-label="Toggle ambient soundtrack" title="Soundtrack On/Off">
+        <span id="audio-icon">🔇</span>
+      </button>
       <button class="progress-pill" id="open-lookbook" title="View your collected pieces">
         <span class="progress-text"><strong id="collected-count">0</strong> / 6 <span class="progress-word">collected</span></span>
         <span class="progress-bar-track"><span class="progress-bar-fill" id="progress-fill"></span></span>
@@ -43,6 +59,12 @@
       <button class="action-pill" id="toggle-tour">Watch Film</button>
     </div>
   </header>
+
+  <!-- Subtle first-visit onboarding gesture hint -->
+  <div class="onboard-hint" id="onboard-hint">
+    <span class="onboard-mobile">Drag to look · Move with joystick · Tap any piece</span>
+    <span class="onboard-desktop">WASD to walk · Drag to look · Click any monolith</span>
+  </div>
 
   <!-- Mobile Virtual Thumb Joystick (touch & narrow screens) -->
   <div class="mobile-joystick" id="mobile-joystick" aria-label="Walk joystick">
@@ -127,8 +149,14 @@
         </div>
         <button class="drawer-close" id="modal-close">✕</button>
       </div>
+      <div class="vip-banner" id="vip-banner">
+        <strong>ANIEZE Atelier Pass Unlocked</strong> — All 6 couture &amp; NOMAD runway pieces collected.
+      </div>
       <div class="modal-grid" id="modal-grid"></div>
-      <a class="btn-shop" href="https://aniezeshop.com/" target="_blank" rel="noopener">Complete your look on aniezeshop.com</a>
+      <div class="modal-actions">
+        <a class="btn-shop" href="https://aniezeshop.com/" target="_blank" rel="noopener">Shop on aniezeshop.com</a>
+        <button class="action-pill secondary" id="btn-share-atelier" style="width:100%;padding:12px 18px;">Share 3D Atelier Link</button>
+      </div>
     </div>
   </div>
 
