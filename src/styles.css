@@ -1,3 +1,10 @@
+@font-face {
+  font-family: "Host Grotesk";
+  src: url("../assets/fonts/HostGrotesk.ttf") format("truetype");
+  font-weight: 300 800;
+  font-style: normal;
+}
+
 :root {
   --ground: #f4f2f3;
   --ink: #000000;
@@ -128,7 +135,28 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .hud-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+}
+
+.icon-pill {
+  border: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(244, 242, 243, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.14);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  transition: transform 0.15s, background 0.2s;
+}
+
+.icon-pill.playing {
+  background: linear-gradient(135deg, var(--paint-main), var(--paint-light));
 }
 
 .progress-pill {
@@ -193,6 +221,36 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .action-pill:hover { background: var(--press); transform: translateY(-1px); }
 .action-pill.secondary { background: rgba(244, 242, 243, 0.92); color: var(--ink); }
 .action-pill.secondary:hover { background: var(--fill); }
+
+/* First-visit onboarding hint */
+.onboard-hint {
+  position: fixed;
+  left: 50%;
+  top: 96px;
+  transform: translateX(-50%);
+  background: rgba(18, 13, 10, 0.78);
+  color: rgba(244, 242, 243, 0.94);
+  border: 1px solid rgba(207, 140, 82, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 8px 16px;
+  border-radius: var(--pill);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  z-index: 11;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+.onboard-hint.hidden {
+  opacity: 0;
+  transform: translate(-50%, -8px);
+}
+
+.onboard-mobile { display: none; }
+.onboard-desktop { display: inline; }
 
 .hud-bottom {
   position: fixed;
@@ -444,10 +502,11 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 }
 
 .drawer-price {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
+  white-space: nowrap;
 }
 
 .drawer-material {
@@ -544,10 +603,28 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   gap: 12px;
 }
 
+.vip-banner {
+  display: none;
+  background: linear-gradient(90deg, rgba(166, 74, 37, 0.14), rgba(207, 140, 82, 0.18));
+  border: 1px solid rgba(166, 74, 37, 0.32);
+  color: var(--ink);
+  padding: 12px 16px;
+  border-radius: 14px;
+  font-size: 13.5px;
+}
+
+.vip-banner.show { display: block; }
+
 .modal-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
+}
+
+.modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .mini-card {
@@ -577,13 +654,15 @@ body.render-mode .hud-top,
 body.render-mode .hud-bottom,
 body.render-mode .product-drawer,
 body.render-mode .mobile-joystick,
-body.render-mode .mobile-stepper {
+body.render-mode .mobile-stepper,
+body.render-mode .onboard-hint {
   display: none !important;
 }
 
 body.tour-active .mobile-joystick,
 body.tour-active .mobile-stepper,
-body.tour-active .hud-center {
+body.tour-active .hud-center,
+body.tour-active .onboard-hint {
   opacity: 0;
   pointer-events: none;
 }
@@ -606,11 +685,12 @@ body.tour-active .hud-center {
   .brand-pill .divider,
   .brand-pill .tag { display: none; }
 
-  .hud-right { gap: 7px; }
+  .hud-right { gap: 6px; }
+  .icon-pill { width: 34px; height: 34px; font-size: 14px; }
 
   .progress-pill {
-    padding: 8px 12px;
-    gap: 8px;
+    padding: 8px 11px;
+    gap: 6px;
   }
 
   .progress-word,
@@ -618,7 +698,7 @@ body.tour-active .hud-center {
 
   .action-pill {
     font-size: 12.5px;
-    padding: 8px 14px;
+    padding: 8px 13px;
   }
 
   .hud-center {
@@ -636,6 +716,14 @@ body.tour-active .hud-center {
     font-size: 12px;
     padding: 7px 8px;
   }
+
+  .onboard-hint {
+    top: max(106px, calc(env(safe-area-inset-top) + 94px));
+    font-size: 11.5px;
+    padding: 7px 14px;
+  }
+  .onboard-mobile { display: inline; }
+  .onboard-desktop { display: none; }
 
   .controls-hint,
   .hud-bottom .shop-pill {
@@ -777,7 +865,7 @@ body.tour-active .hud-center {
   }
 
   .drawer-title { font-size: 19px; }
-  .drawer-price { font-size: 19px; }
+  .drawer-price { font-size: 18px; }
   .drawer-story { font-size: 13px; line-height: 1.42; }
 
   #btn-swap-video { display: none; }

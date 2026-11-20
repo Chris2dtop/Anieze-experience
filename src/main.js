@@ -34,7 +34,7 @@ scene.fog = new THREE.FogExp2('#130d0a', 0.022);
 
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.05).texture;
-scene.environmentIntensity = 0.24;
+scene.environmentIntensity = 0.26;
 
 function getAdaptiveFov() {
   const portrait = window.innerHeight > window.innerWidth;
@@ -96,13 +96,14 @@ const matDarkWall = new THREE.MeshStandardMaterial({ map: obsidianTex, color: '#
 const matWarmFloor = new THREE.MeshStandardMaterial({ map: darkFloorTex, roughness: 0.24, metalness: 0.18 });
 const matRunwayFloor = new THREE.MeshStandardMaterial({ map: obsidianTex, color: '#0e0b0a', roughness: 0.12, metalness: 0.42 });
 const matPlinth = new THREE.MeshStandardMaterial({ map: warmRibTex, color: '#332822', roughness: 0.42, metalness: 0.12 });
-const matBronze = new THREE.MeshStandardMaterial({ color: '#3a2d24', roughness: 0.24, metalness: 0.86 });
+const matBronze = new THREE.MeshStandardMaterial({ color: '#4a382b', roughness: 0.22, metalness: 0.88 });
+const matSculptObsidian = new THREE.MeshStandardMaterial({ color: '#1b1614', roughness: 0.26, metalness: 0.52 });
 const matRustGlow = new THREE.MeshStandardMaterial({ color: '#a64a25', emissive: '#b85024', emissiveIntensity: 2.8, roughness: 0.25 });
 const matCaramelGlow = new THREE.MeshStandardMaterial({ color: '#cf8c52', emissive: '#e09654', emissiveIntensity: 2.3, roughness: 0.25 });
 const matWarmCove = new THREE.MeshStandardMaterial({ color: '#ffdcb4', emissive: '#ffbd75', emissiveIntensity: 1.9, roughness: 0.35 });
 
 // ---------------------------------------------------------------------------
-// 3. Build the 3-Zone Warm High-Contrast Parisian Atelier
+// 3. Build the 3-Zone Warm High-Contrast Parisian Atelier + 3D Sculptural Forms
 // ---------------------------------------------------------------------------
 function addBox(w, h, d, mat, x, y, z, cast = true, recv = true) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -132,11 +133,25 @@ addBox(0.5, 8.2, 22, matDarkWall, 7.8, 4.1, -21, false, true);
 addBox(16, 0.5, 22, matDarkWall, 0, 8.2, -21, false, true);
 addBox(16, 8.2, 0.5, matDarkWall, 0, 4.1, -31.8, false, true);
 
+// Ribbed colonnade + suspended bronze linear pendant luminaires
 for (let z = 16; z >= -8; z -= 4.8) {
   addBox(0.7, 7.0, 0.7, matWarmRib, -6.2, 3.5, z, true, true);
   addBox(0.7, 7.0, 0.7, matWarmRib, 6.2, 3.5, z, true, true);
   addBox(13.2, 0.55, 0.55, matWarmRib, 0, 6.8, z, true, true);
   addBox(11.4, 0.05, 0.09, matWarmCove, 0, 6.5, z - 0.28, false, false);
+
+  // Suspended bronze linear gallery pendant hanging between beams
+  const pGroup = new THREE.Group();
+  pGroup.position.set(0, 5.25, z - 2.4);
+  const rodL = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 1.55, 8), matBronze);
+  rodL.position.set(-1.35, 0.78, 0);
+  const rodR = rodL.clone();
+  rodR.position.x = 1.35;
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(3.1, 0.06, 0.08), matBronze);
+  const glow = new THREE.Mesh(new THREE.BoxGeometry(2.96, 0.025, 0.045), matWarmCove);
+  glow.position.y = -0.035;
+  pGroup.add(rodL, rodR, bar, glow);
+  scene.add(pGroup);
 }
 
 for (let i = 0; i < 4; i++) {
@@ -149,6 +164,71 @@ for (let i = 0; i < 4; i++) {
   addBox(0.08, 7.2, 0.08, stripMat, 5.5, 3.6, z, false, false);
   addBox(11.1, 0.08, 0.08, stripMat, 0, 7.3, z, false, false);
 }
+
+// Sculptural 3D Couture Mannequin Bust Pedestals (LatheGeometry torso + fluted travertine plinth)
+const torsoProfile = [
+  new THREE.Vector2(0.01, 0.0),
+  new THREE.Vector2(0.16, 0.04),
+  new THREE.Vector2(0.19, 0.16),
+  new THREE.Vector2(0.145, 0.34),
+  new THREE.Vector2(0.22, 0.58),
+  new THREE.Vector2(0.245, 0.72),
+  new THREE.Vector2(0.13, 0.80),
+  new THREE.Vector2(0.075, 0.88),
+  new THREE.Vector2(0.068, 0.98),
+  new THREE.Vector2(0.01, 1.0)
+];
+const bustGeo = new THREE.LatheGeometry(torsoProfile, 28);
+const sculpturalForms = [];
+
+function addCoutureBustPedestal(x, z, rotY = 0, darkFinish = false) {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  g.rotation.y = rotY;
+
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.42, 0.46, 0.92, 20),
+    darkFinish ? matDarkWall : matPlinth
+  );
+  base.position.y = 0.46;
+  base.castShadow = true;
+  base.receiveShadow = true;
+  g.add(base);
+
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.43, 0.014, 10, 32),
+    darkFinish ? matRustGlow : matCaramelGlow
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.92;
+  g.add(ring);
+
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.045, 0.34, 14), matBronze);
+  stem.position.y = 1.09;
+  g.add(stem);
+
+  const bust = new THREE.Mesh(bustGeo, darkFinish ? matBronze : matSculptObsidian);
+  bust.position.y = 1.22;
+  bust.scale.set(1.12, 1.05, 0.76);
+  bust.castShadow = true;
+  g.add(bust);
+
+  // Architectural draped Agbada shoulder collar accent
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.022, 12, 28), matBronze);
+  collar.rotation.x = Math.PI / 2;
+  collar.scale.set(1.18, 0.78, 1.0);
+  collar.position.y = 1.94;
+  g.add(collar);
+
+  scene.add(g);
+  sculpturalForms.push(bust);
+}
+
+// Flank the Atrium entrance & Runway Vault catwalk with 4 sculptural 3D couture busts
+addCoutureBustPedestal(-4.7, 15.2, 0.45, false);
+addCoutureBustPedestal(4.7, 15.2, -0.45, false);
+addCoutureBustPedestal(-4.3, -21.8, 0.5, true);
+addCoutureBustPedestal(4.3, -21.8, -0.5, true);
 
 function addGarmentRail(x, z, rotY = 0) {
   const g = new THREE.Group();
@@ -171,7 +251,7 @@ function addGarmentRail(x, z, rotY = 0) {
 addGarmentRail(-5.4, 5.0, Math.PI / 2);
 addGarmentRail(5.4, 2.0, Math.PI / 2);
 
-const hemiLight = new THREE.HemisphereLight('#ffdcb8', '#140c08', 0.22);
+const hemiLight = new THREE.HemisphereLight('#ffdcb8', '#140c08', 0.24);
 scene.add(hemiLight);
 
 const shadowRes = IS_MOBILE_UA ? 1024 : 2048;
@@ -183,7 +263,7 @@ sunSpot.shadow.mapSize.set(shadowRes, shadowRes);
 sunSpot.shadow.bias = -0.0005;
 scene.add(sunSpot, sunSpot.target);
 
-const corridorLight = new THREE.PointLight('#ffbd7a', 32, 20, 1.6);
+const corridorLight = new THREE.PointLight('#ffbd7a', 34, 20, 1.6);
 corridorLight.position.set(0, 5.2, -2.8);
 scene.add(corridorLight);
 
@@ -391,16 +471,16 @@ const dustPoints = new THREE.Points(dustGeo, dustMat);
 scene.add(dustPoints);
 
 // ---------------------------------------------------------------------------
-// 5. Cinematic Camera Spline (Tour Mode & Vertical 9:16 Mode)
+// 5. Cinematic Camera Spline (16:9 Widescreen 36s & 9:16 Vertical 68s)
 // ---------------------------------------------------------------------------
-const TOUR_DURATION = 30.0;
+const TOUR_DURATION = 36.0;
 const camPath = new THREE.CatmullRomCurve3([
-  new THREE.Vector3(0.0, 1.85, 18.2),
-  new THREE.Vector3(-1.3, 1.75, 13.6),
-  new THREE.Vector3(1.2, 1.72, 10.6),
+  new THREE.Vector3(0.0, 1.85, 18.4),
+  new THREE.Vector3(-1.1, 1.75, 13.6),
+  new THREE.Vector3(1.1, 1.72, 10.6),
   new THREE.Vector3(0.0, 1.68, 4.2),
-  new THREE.Vector3(-1.1, 1.66, 0.8),
-  new THREE.Vector3(1.1, 1.66, -2.5),
+  new THREE.Vector3(-1.0, 1.66, 0.8),
+  new THREE.Vector3(1.0, 1.66, -2.5),
   new THREE.Vector3(0.0, 1.68, -10.5),
   new THREE.Vector3(-1.0, 1.65, -14.2),
   new THREE.Vector3(0.0, 1.82, -19.0),
@@ -475,25 +555,25 @@ function sampleVerticalCamera(t) {
 }
 
 const CINEMA_BEATS = IS_VERTICAL ? [
-  { t0: 0.4,  t1: 3.9,  zone: '01 · The Atrium', eyebrow: 'ANIEZE · Paris', title: 'Enter the 3D Atelier', sub: '6 live screens · Real pieces from aniezeshop.com' },
+  { t0: 0.4,  t1: 3.9,  zone: '01 · The Atrium', eyebrow: 'ANIEZE · Paris', title: 'Enter the 3D Atelier', sub: '6 live screens · Couture & NOMAD Paris Runway' },
   { t0: 5.8,  t1: 12.1, zone: '01 · The Atrium', eyebrow: 'Piece 01 · €320 · 1080p 360° Screen', title: 'Shiny Jagaban Sweater', sub: 'Metallic-fleck knit · Sculpted Agbada shoulders' },
   { t0: 15.8, t1: 22.4, zone: '01 · The Atrium', eyebrow: 'Piece 02 · €680 · 1080p 360° Screen', title: 'Nkisi Layered Trench', sub: 'Wool & lambskin scales · 360° atelier screen' },
-  { t0: 26.4, t1: 32.0, zone: '02 · Craft Corridor', eyebrow: 'Piece 03 · €120 · @anieze._ Reel', title: 'ORO Agbada Hoodie – Black', sub: 'West African Agbada volume · Parisian streetwear cut' },
-  { t0: 35.8, t1: 41.4, zone: '02 · Craft Corridor', eyebrow: 'Piece 04 · €470 · MOSAÏQUE Runway', title: 'ARCO Leather Gilet', sub: 'Hand-painted gunmetal patina · 100% Leather' },
-  { t0: 45.4, t1: 51.0, zone: '03 · Runway Vault', eyebrow: 'Piece 05 · €370 · @anieze._ Reel', title: 'ZAYA Jacket', sub: '100% Lambskin leather · Modern moto cut' },
+  { t0: 26.4, t1: 32.0, zone: '02 · Craft Corridor', eyebrow: 'Piece 03 · NOMAD Paris Runway', title: 'NOMAD Look 15 — Moto & Wrap', sub: 'Structured leather moto · Floor-length draped wrap' },
+  { t0: 35.8, t1: 41.4, zone: '02 · Craft Corridor', eyebrow: 'Piece 04 · NOMAD Paris Runway', title: 'NOMAD Look 21 — Painted Art Jacket', sub: 'Hand-painted monochrome print · Wide tailored wool' },
+  { t0: 45.4, t1: 51.0, zone: '03 · Runway Vault', eyebrow: 'Piece 05 · NOMAD Paris Runway', title: 'NOMAD Look 23 — Sculpted Knit', sub: 'Agbada shoulder knit · Ribbed sand tailoring' },
   { t0: 55.6, t1: 64.4, zone: '03 · Runway Vault', eyebrow: 'Piece 06 · €790 · Paris Atelier Finale', title: 'Elara Lambskin Trench', sub: 'Full-length burnished lambskin · Live boutique film' }
 ] : [
-  { t0: 0.4,  t1: 3.6,  zone: '01 · The Atrium', eyebrow: 'ANIEZE · Paris', title: 'Enter the 3D Atelier', sub: 'Real pieces & live footage from aniezeshop.com — built to explore and collect.' },
-  { t0: 4.0,  t1: 7.4,  zone: '01 · The Atrium', eyebrow: 'Piece 01 · €320 · 1080p 360° Screen', title: 'Shiny Jagaban Sweater', sub: 'Metallic-fleck knit · Sculpted Agbada shoulders' },
-  { t0: 7.8,  t1: 11.4, zone: '01 · The Atrium', eyebrow: 'Piece 02 · €680 · 1080p 360° Screen', title: 'Nkisi Layered Trench', sub: 'Wool & lambskin scales · 360° atelier screen' },
-  { t0: 13.0, t1: 16.4, zone: '02 · Craft Corridor', eyebrow: 'Piece 03 · €120 · @anieze._ Reel', title: 'ORO Agbada Hoodie – Black', sub: 'West African Agbada volume · Parisian streetwear cut' },
-  { t0: 16.8, t1: 20.2, zone: '02 · Craft Corridor', eyebrow: 'Piece 04 · €470 · MOSAÏQUE Runway', title: 'ARCO Leather Gilet', sub: 'Hand-painted gunmetal patina · 100% Leather' },
-  { t0: 21.8, t1: 24.8, zone: '03 · Runway Vault', eyebrow: 'Piece 05 · €370 · @anieze._ Reel', title: 'ZAYA Jacket', sub: '100% Lambskin leather · Modern moto cut' },
-  { t0: 25.0, t1: 27.6, zone: '03 · Runway Vault', eyebrow: 'Piece 06 · €790 · Runway Finale', title: 'Elara Lambskin Trench', sub: 'Full-length lambskin leather · Paris' }
+  { t0: 0.4,  t1: 4.2,  zone: '01 · The Atrium', eyebrow: 'ANIEZE · Paris', title: 'Enter the 3D Atelier', sub: '6 live screens · Couture & NOMAD Paris Runway — built to explore and collect.' },
+  { t0: 4.8,  t1: 8.8,  zone: '01 · The Atrium', eyebrow: 'Piece 01 · €320 · 1080p 360° Screen', title: 'Shiny Jagaban Sweater', sub: 'Metallic-fleck knit · Sculpted Agbada shoulders' },
+  { t0: 9.4,  t1: 13.6, zone: '01 · The Atrium', eyebrow: 'Piece 02 · €680 · 1080p 360° Screen', title: 'Nkisi Layered Trench', sub: 'Wool & lambskin scales · 360° atelier screen' },
+  { t0: 15.0, t1: 19.2, zone: '02 · Craft Corridor', eyebrow: 'Piece 03 · NOMAD Paris Runway', title: 'NOMAD Look 15 — Moto & Wrap', sub: 'Structured leather moto · Floor-length draped wrap' },
+  { t0: 19.8, t1: 23.8, zone: '02 · Craft Corridor', eyebrow: 'Piece 04 · NOMAD Paris Runway', title: 'NOMAD Look 21 — Painted Art Jacket', sub: 'Hand-painted monochrome print · Wide tailored wool' },
+  { t0: 25.4, t1: 29.2, zone: '03 · Runway Vault', eyebrow: 'Piece 05 · NOMAD Paris Runway', title: 'NOMAD Look 23 — Sculpted Knit', sub: 'Agbada shoulder knit · Ribbed sand tailoring' },
+  { t0: 29.8, t1: 33.0, zone: '03 · Runway Vault', eyebrow: 'Piece 06 · €790 · Paris Atelier Finale', title: 'Elara Lambskin Trench', sub: 'Full-length burnished lambskin · Live boutique film' }
 ];
 
 // ---------------------------------------------------------------------------
-// 6. Interactive Controls, Multi-Touch Joystick, Piece Stepper & Gamification
+// 6. Interactive Controls, Ambient Audio, Onboarding Hint & Gamification
 // ---------------------------------------------------------------------------
 let mode = (IS_RENDER || IS_AUTOPLAY) ? 'tour' : 'explore';
 if (mode === 'tour') document.body.classList.add('tour-active');
@@ -537,12 +617,73 @@ const elModal = document.getElementById('lookbook-modal');
 const elModalGrid = document.getElementById('modal-grid');
 const elModalTitle = document.getElementById('modal-title');
 const elModalEyebrow = document.getElementById('modal-eyebrow');
+const elVipBanner = document.getElementById('vip-banner');
+const elShareBtn = document.getElementById('btn-share-atelier');
+
+const elOnboard = document.getElementById('onboard-hint');
+const elToggleAudio = document.getElementById('toggle-audio');
+const elAudioIcon = document.getElementById('audio-icon');
 
 const elJoystick = document.getElementById('mobile-joystick');
 const elJoyKnob = document.getElementById('joy-knob');
 const elStepPrev = document.getElementById('step-prev');
 const elStepNext = document.getElementById('step-next');
 const elStepLabel = document.getElementById('step-label');
+
+// Auto-dismiss onboarding hint after 5.5s or first interaction
+function dismissOnboard() {
+  if (elOnboard && !elOnboard.classList.contains('hidden')) {
+    elOnboard.classList.add('hidden');
+  }
+}
+if (elOnboard) {
+  setTimeout(dismissOnboard, 5500);
+  window.addEventListener('pointerdown', dismissOnboard, { once: true, passive: true });
+  window.addEventListener('keydown', dismissOnboard, { once: true, passive: true });
+}
+
+// Optional Ambient Soundtrack Toggle
+const ambientAudio = new Audio('./assets/audio/tech_house_vibes.mp3');
+ambientAudio.loop = true;
+ambientAudio.volume = 0.35;
+let audioPlaying = false;
+
+if (elToggleAudio) {
+  elToggleAudio.addEventListener('click', () => {
+    if (audioPlaying) {
+      ambientAudio.pause();
+      audioPlaying = false;
+      elToggleAudio.classList.remove('playing');
+      if (elAudioIcon) elAudioIcon.textContent = '🔇';
+    } else {
+      ambientAudio.play().then(() => {
+        audioPlaying = true;
+        elToggleAudio.classList.add('playing');
+        if (elAudioIcon) elAudioIcon.textContent = '🔊';
+      }).catch(() => {});
+    }
+  });
+}
+
+// Share Atelier Link (Web Share API on mobile, Clipboard fallback on desktop)
+if (elShareBtn) {
+  elShareBtn.addEventListener('click', async () => {
+    const shareUrl = window.location.origin + window.location.pathname;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'ANIEZE — Interactive 3D Atelier', text: 'Explore the ANIEZE 3D Paris Atelier', url: shareUrl });
+        return;
+      } catch {}
+    }
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      elShareBtn.textContent = 'Link Copied ✓';
+      setTimeout(() => { elShareBtn.textContent = 'Share 3D Atelier Link'; }, 2200);
+    } catch {
+      elShareBtn.textContent = shareUrl;
+    }
+  });
+}
 
 if (elJoystick && elJoyKnob) {
   const maxR = 32;
@@ -568,6 +709,7 @@ if (elJoystick && elJoyKnob) {
 
   elJoystick.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
+    dismissOnboard();
     joyPointerId = e.pointerId;
     elJoystick.setPointerCapture(e.pointerId);
     elJoyKnob.classList.add('active');
@@ -613,6 +755,7 @@ function updateProgressUI() {
     vaultRustLight.intensity = 90;
     elModalEyebrow.textContent = 'Atelier Unlocked · 6 / 6 Collected';
     elModalTitle.textContent = 'Your curated ANIEZE drop is ready';
+    if (elVipBanner) elVipBanner.classList.add('show');
   }
   renderLookbookGrid();
 }
@@ -830,6 +973,9 @@ function updateSceneAtTime(t) {
     node.beacon.rotation.y = t * 1.4 + idx;
     node.beacon.rotation.x = Math.sin(t * 0.9 + idx) * 0.35;
     idx++;
+  });
+  sculpturalForms.forEach((b, bi) => {
+    b.rotation.y = Math.sin(t * 0.35 + bi * 1.5) * 0.14;
   });
   dustPoints.position.y = Math.sin(t * 0.35) * 0.12;
 
