@@ -1,0 +1,19 @@
+{
+  "walkers": [
+    {
+      "id": "leather-pants-walker-01",
+      "label": "ANIEZE Sculpted Leather Wing Pants — Runway Walker",
+      "video": "./assets/shoppers/walker01_green.mp4",
+      "threshold": 0.14,
+      "smoothness": 0.10,
+      "spillStrength": 0.85,
+      "height": 1.98,
+      "aspect": 0.5625,
+      "start": [0.0, 0.02, 13.8],
+      "end": [0.0, 0.02, 4.5],
+      "speed": 0.036,
+      "phase": 0.0,
+      "billboard": true
+    }
+  ]
+}

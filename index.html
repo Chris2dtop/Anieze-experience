@@ -2,30 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>ANIEZE — Interactive 3D Atelier · Paris</title>
   <meta name="description" content="Explore ANIEZE's interactive 3D Paris Atelier featuring live NOMAD runway looks, 360° couture screens, and collectible drops." />
   <link rel="icon" type="image/svg+xml" href="./assets/brand/logo-black.svg" />
-  <meta property="og:type" content="website" />
-  <meta property="og:title" content="ANIEZE — Interactive 3D Atelier · Paris" />
-  <meta property="og:description" content="Walk the 3D showroom, inspect 6 live couture & NOMAD runway monoliths, and collect the drop." />
-  <meta property="og:url" content="https://chris2dtop.github.io/Anieze-experience/" />
-  <meta property="og:image" content="https://chris2dtop.github.io/Anieze-experience/assets/brand/og-preview.jpg" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="ANIEZE — Interactive 3D Atelier · Paris" />
-  <meta name="twitter:description" content="Walk the 3D showroom, inspect 6 live couture & NOMAD runway monoliths, and collect the drop." />
-  <meta name="twitter:image" content="https://chris2dtop.github.io/Anieze-experience/assets/brand/og-preview.jpg" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Host+Grotesk:wght@300..800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./src/styles.css" />
   <script type="importmap">
     {
       "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.174.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.174.0/examples/jsm/"
+        "three": "./assets/vendor/three.module.js",
+        "three/addons/": "./assets/vendor/addons/"
       }
     }
   </script>
@@ -37,7 +23,7 @@
   <!-- Interactive HUD -->
   <header class="hud-top">
     <div class="brand-pill">
-      <img src="./assets/brand/logo-black.svg" alt="ANIEZE" />
+      <img id="brand-logo-top" src="./assets/brand/logo-black.svg" alt="ANIEZE" />
       <span class="divider"></span>
       <span class="tag">Paris · 3D Atelier</span>
     </div>
@@ -49,11 +35,12 @@
     </nav>
 
     <div class="hud-right">
+      <button class="action-pill secondary" id="toggle-set" title="Switch 3D Environment Set">Set: Atelier</button>
       <button class="icon-pill" id="toggle-audio" aria-label="Toggle ambient soundtrack" title="Soundtrack On/Off">
         <span id="audio-icon">🔇</span>
       </button>
       <button class="progress-pill" id="open-lookbook" title="View your collected pieces">
-        <span class="progress-text"><strong id="collected-count">0</strong> / 6 <span class="progress-word">collected</span></span>
+        <span class="progress-text"><strong id="collected-count">0</strong> / <span id="collected-total">6</span> <span class="progress-word">collected</span></span>
         <span class="progress-bar-track"><span class="progress-bar-fill" id="progress-fill"></span></span>
       </button>
       <button class="action-pill" id="toggle-tour">Watch Film</button>
@@ -63,7 +50,7 @@
   <!-- Subtle first-visit onboarding gesture hint -->
   <div class="onboard-hint" id="onboard-hint">
     <span class="onboard-mobile">Drag to look · Move with joystick · Tap any piece</span>
-    <span class="onboard-desktop">WASD to walk · Drag to look · Click any monolith</span>
+    <span class="onboard-desktop">WASD to walk · Drag to look · Click any display screen</span>
   </div>
 
   <!-- Mobile Virtual Thumb Joystick (touch & narrow screens) -->
@@ -74,7 +61,7 @@
     <span class="joy-label">Move</span>
   </div>
 
-  <!-- Mobile Quick Piece Stepper (Prev / Next monolith) -->
+  <!-- Mobile Quick Piece Stepper (Prev / Next display screen) -->
   <div class="mobile-stepper" id="mobile-stepper" aria-label="Step between pieces">
     <button class="step-btn" id="step-prev" aria-label="Previous piece">‹</button>
     <span class="step-label" id="step-label">Pieces</span>
@@ -85,13 +72,13 @@
     <div class="controls-hint">
       <strong>WASD / Arrows</strong> to walk · <strong>Drag</strong> to look · <strong>Click any piece</strong> to inspect &amp; collect
     </div>
-    <a class="action-pill secondary shop-pill" href="https://aniezeshop.com/" target="_blank" rel="noopener">aniezeshop.com</a>
+    <a class="action-pill secondary shop-pill" id="shop-pill-link" href="https://aniezeshop.com/" target="_blank" rel="noopener">aniezeshop.com</a>
   </footer>
 
   <!-- Cinematic Overlay (Tour Mode & Video Render) -->
   <div class="cinema-overlay" id="cinema-overlay">
     <div class="cinema-top">
-      <img class="cinema-logo" src="./assets/brand/logo-light.svg" alt="ANIEZE" />
+      <img class="cinema-logo" id="cinema-logo" src="./assets/brand/logo-light.svg" alt="ANIEZE" />
       <div class="cinema-zone-badge">
         <span class="cinema-dot"></span>
         <span id="cinema-zone-label">01 · The Atrium</span>
@@ -108,10 +95,10 @@
 
   <!-- Endcard (last 3 seconds of film) -->
   <div class="cinema-endcard" id="cinema-endcard">
-    <img src="./assets/brand/logo-black.svg" alt="ANIEZE" />
-    <div class="end-sub">Paris · Interactive 3D Atelier</div>
-    <div class="end-url">aniezeshop.com</div>
-    <div class="end-ig">@anieze._</div>
+    <img id="endcard-logo" src="./assets/brand/logo-black.svg" alt="ANIEZE" />
+    <div class="end-sub" id="endcard-sub">Paris · Interactive 3D Atelier</div>
+    <div class="end-url" id="endcard-url">aniezeshop.com</div>
+    <div class="end-ig" id="endcard-ig">@anieze._</div>
   </div>
 
   <!-- Product Inspection Drawer (Desktop side drawer / Mobile bottom sheet) -->
@@ -133,9 +120,8 @@
     <p class="drawer-story" id="drawer-story"></p>
     <div class="drawer-actions">
       <button class="btn-collect" id="btn-collect">Collect piece (+1)</button>
-      <a class="btn-shop" id="btn-shop" href="https://aniezeshop.com/" target="_blank" rel="noopener">Shop on aniezeshop.com</a>
-      <button class="action-pill secondary" id="btn-swap-video" style="width:100%;font-size:12.5px;padding:10px 14px;">Swap screen video (.mp4)</button>
-      <input type="file" id="swap-video-input" accept="video/mp4,video/webm" style="display:none" />
+      <a class="btn-shop" id="btn-shop" href="https://aniezeshop.com/" target="_blank" rel="noopener">Choose size on aniezeshop.com →</a>
+      <button class="action-pill secondary" id="btn-share-look" style="width:100%;font-size:12.5px;padding:10px 14px;">Copy direct link to this look</button>
     </div>
   </aside>
 
@@ -147,15 +133,15 @@
           <div style="font-size:13px;font-weight:700;color:var(--paint-main)" id="modal-eyebrow">Your Atelier Bag</div>
           <h2 style="font-size:22px;font-weight:600" id="modal-title">Discover all 6 pieces to unlock the drop</h2>
         </div>
-        <button class="drawer-close" id="modal-close">✕</button>
+        <button class="drawer-close" id="modal-close" aria-label="Close lookbook">✕</button>
       </div>
       <div class="vip-banner" id="vip-banner">
-        <strong>ANIEZE Atelier Pass Unlocked</strong> — All 6 couture &amp; NOMAD runway pieces collected.
+        <strong>ANIEZE Atelier Pass Unlocked</strong> — All couture &amp; runway pieces collected.
       </div>
       <div class="modal-grid" id="modal-grid"></div>
       <div class="modal-actions">
-        <a class="btn-shop" href="https://aniezeshop.com/" target="_blank" rel="noopener">Shop on aniezeshop.com</a>
-        <button class="action-pill secondary" id="btn-share-atelier" style="width:100%;padding:12px 18px;">Share 3D Atelier Link</button>
+        <a class="btn-shop" id="modal-shop-link" href="https://aniezeshop.com/" target="_blank" rel="noopener">Shop on aniezeshop.com</a>
+        <button class="action-pill secondary" id="btn-share-atelier" style="width:100%;padding:12px 18px;">Share 3D Showroom Link</button>
       </div>
     </div>
   </div>

@@ -1,13 +1,70 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { ANIEZE_PRODUCTS } from './products.js';
+import { createSharedMaterials } from './sets/materials.js';
+import { resolveSet, SET_REGISTRY } from './sets/index.js';
+import { createWalkerSystem } from './walkers.js';
+import { fetchBrandContext, hydrateSessionFromHash, getAdminSession, trackShowroomEvent } from './supabase-sync.js';
+import { initAdminEditor } from './admin-editor.js';
 
 const params = new URLSearchParams(window.location.search);
+const BRAND_SLUG = (params.get('brand') || 'anieze').toLowerCase().replace(/[^a-z0-9-]/g, '') || 'anieze';
+const DEEP_LINK_LOOK = params.get('look') || null;
 const IS_RENDER = params.get('render') === '1';
 const IS_AUTOPLAY = params.get('autoplay') === '1';
 const CLEAN_SHOT = params.get('clean') === '1';
+const IS_EMBED = window.self !== window.top;
 const IS_MOBILE_UA = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.matchMedia('(pointer: coarse)').matches;
 if (IS_RENDER || CLEAN_SHOT) document.body.classList.add('render-mode');
+
+// Active brand state (overridden live from Supabase `brands` table)
+const activeBrand = {
+  id: null,
+  slug: BRAND_SLUG,
+  name: BRAND_SLUG === 'anieze' ? 'ANIEZE' : BRAND_SLUG.toUpperCase(),
+  tagline: 'Paris · Interactive 3D Atelier',
+  shopUrl: 'https://aniezeshop.com/',
+  instagram: '@anieze._',
+  logoDark: './assets/brand/logo-black.svg',
+  logoLight: './assets/brand/logo-light.svg',
+  accent: '#cf8c52'
+};
+
+function applyBrandIdentity(brandRow) {
+  if (!brandRow) return;
+  activeBrand.id = brandRow.id || null;
+  activeBrand.slug = brandRow.slug || BRAND_SLUG;
+  activeBrand.name = brandRow.name || activeBrand.name;
+  activeBrand.tagline = brandRow.tagline || activeBrand.tagline;
+  activeBrand.shopUrl = brandRow.shop_url || activeBrand.shopUrl;
+  activeBrand.instagram = brandRow.instagram_handle || activeBrand.instagram;
+  activeBrand.logoDark = brandRow.logo_dark_url || activeBrand.logoDark;
+  activeBrand.logoLight = brandRow.logo_light_url || activeBrand.logoLight;
+  if (brandRow.palette?.accent) activeBrand.accent = brandRow.palette.accent;
+
+  document.title = `${activeBrand.name} — ${activeBrand.tagline}`;
+  document.documentElement.style.setProperty('--paint-main', activeBrand.accent);
+  const cleanHost = activeBrand.shopUrl.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+
+  const elLogoTop = document.getElementById('brand-logo-top');
+  const elCinemaLogo = document.getElementById('cinema-logo');
+  const elEndLogo = document.getElementById('endcard-logo');
+  if (elLogoTop) { elLogoTop.src = activeBrand.logoDark; elLogoTop.alt = activeBrand.name; }
+  if (elCinemaLogo) { elCinemaLogo.src = activeBrand.logoLight; elCinemaLogo.alt = activeBrand.name; }
+  if (elEndLogo) { elEndLogo.src = activeBrand.logoDark; elEndLogo.alt = activeBrand.name; }
+
+  const elShopPill = document.getElementById('shop-pill-link');
+  const elModalShop = document.getElementById('modal-shop-link');
+  const elEndSub = document.getElementById('endcard-sub');
+  const elEndUrl = document.getElementById('endcard-url');
+  const elEndIg = document.getElementById('endcard-ig');
+  if (elShopPill) { elShopPill.href = activeBrand.shopUrl; elShopPill.textContent = cleanHost; }
+  if (elModalShop) { elModalShop.href = activeBrand.shopUrl; elModalShop.textContent = `Shop on ${cleanHost}`; }
+  if (elEndSub) elEndSub.textContent = activeBrand.tagline;
+  if (elEndUrl) elEndUrl.textContent = cleanHost;
+  if (elEndIg) elEndIg.textContent = activeBrand.instagram;
+}
 
 // ---------------------------------------------------------------------------
 // 1. Renderer, Scene & Warm High-Contrast Parisian Gallery Lighting
@@ -46,247 +103,56 @@ const camera = new THREE.PerspectiveCamera(getAdaptiveFov(), window.innerWidth /
 camera.position.set(0, 1.72, 18.0);
 
 // ---------------------------------------------------------------------------
-// 2. Procedural Warm Architectural PBR Textures
+// 2 & 3. Modular 3D Environment Set Engine (?set=atelier | ?set=courtyard)
 // ---------------------------------------------------------------------------
-function makeStoneTexture(baseHex, grainAmt = 16, streaks = true, seamAlpha = 0.14) {
-  const c = document.createElement('canvas');
-  c.width = 512; c.height = 512;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = baseHex;
-  ctx.fillRect(0, 0, 512, 512);
-
-  if (streaks) {
-    for (let i = 0; i < 110; i++) {
-      const y = Math.random() * 512;
-      ctx.fillStyle = i % 2 === 0 ? 'rgba(235,198,162,0.045)' : 'rgba(18,11,8,0.065)';
-      ctx.fillRect(0, y, 512, 1 + Math.random() * 6);
-    }
-  }
-  const img = ctx.getImageData(0, 0, 512, 512);
-  const d = img.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const n = (Math.random() - 0.5) * grainAmt;
-    d[i] = Math.max(0, Math.min(255, d[i] + n));
-    d[i + 1] = Math.max(0, Math.min(255, d[i + 1] + n));
-    d[i + 2] = Math.max(0, Math.min(255, d[i + 2] + n));
-  }
-  ctx.putImageData(img, 0, 0);
-  ctx.strokeStyle = `rgba(10,6,4,${seamAlpha})`;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(0, 0, 512, 512);
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-const warmPlasterTex = makeStoneTexture('#5a493e', 15, true, 0.14);
-warmPlasterTex.repeat.set(8, 3);
-const warmRibTex = makeStoneTexture('#3e3129', 14, true, 0.16);
-warmRibTex.repeat.set(4, 2);
-const darkFloorTex = makeStoneTexture('#241c17', 14, true, 0.18);
-darkFloorTex.repeat.set(10, 20);
-const obsidianTex = makeStoneTexture('#110d0c', 10, false, 0.12);
-obsidianTex.repeat.set(4, 12);
-
-const matWarmWall = new THREE.MeshStandardMaterial({ map: warmPlasterTex, roughness: 0.84, metalness: 0.06 });
-const matWarmRib = new THREE.MeshStandardMaterial({ map: warmRibTex, roughness: 0.78, metalness: 0.08 });
-const matDarkWall = new THREE.MeshStandardMaterial({ map: obsidianTex, color: '#140f0d', roughness: 0.72, metalness: 0.14 });
-const matWarmFloor = new THREE.MeshStandardMaterial({ map: darkFloorTex, roughness: 0.24, metalness: 0.18 });
-const matRunwayFloor = new THREE.MeshStandardMaterial({ map: obsidianTex, color: '#0e0b0a', roughness: 0.12, metalness: 0.42 });
-const matPlinth = new THREE.MeshStandardMaterial({ map: warmRibTex, color: '#332822', roughness: 0.42, metalness: 0.12 });
-const matBronze = new THREE.MeshStandardMaterial({ color: '#4a382b', roughness: 0.22, metalness: 0.88 });
-const matSculptObsidian = new THREE.MeshStandardMaterial({ color: '#1b1614', roughness: 0.26, metalness: 0.52 });
-const matRustGlow = new THREE.MeshStandardMaterial({ color: '#a64a25', emissive: '#b85024', emissiveIntensity: 2.8, roughness: 0.25 });
-const matCaramelGlow = new THREE.MeshStandardMaterial({ color: '#cf8c52', emissive: '#e09654', emissiveIntensity: 2.3, roughness: 0.25 });
-const matWarmCove = new THREE.MeshStandardMaterial({ color: '#ffdcb4', emissive: '#ffbd75', emissiveIntensity: 1.9, roughness: 0.35 });
-
-// ---------------------------------------------------------------------------
-// 3. Build the 3-Zone Warm High-Contrast Parisian Atelier + 3D Sculptural Forms
-// ---------------------------------------------------------------------------
-function addBox(w, h, d, mat, x, y, z, cast = true, recv = true) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-  m.position.set(x, y, z);
-  m.castShadow = cast;
-  m.receiveShadow = recv;
-  scene.add(m);
-  return m;
-}
-
-addBox(14, 0.2, 32, matWarmFloor, 0, -0.1, 6, false, true);
-addBox(0.06, 0.015, 30, matCaramelGlow, -1.9, 0.008, 6, false, false);
-addBox(0.06, 0.015, 30, matCaramelGlow, 1.9, 0.008, 6, false, false);
-
-addBox(16, 0.2, 22, matRunwayFloor, 0, -0.1, -21, false, true);
-addBox(3.4, 0.22, 18, matRunwayFloor, 0, 0.11, -19.5, true, true);
-addBox(0.06, 0.035, 18, matRustGlow, -1.72, 0.22, -19.5, false, false);
-addBox(0.06, 0.035, 18, matRustGlow, 1.72, 0.22, -19.5, false, false);
-
-addBox(0.4, 7.2, 32, matWarmWall, -6.8, 3.6, 6, false, true);
-addBox(0.4, 7.2, 32, matWarmWall, 6.8, 3.6, 6, false, true);
-addBox(14, 0.4, 32, matWarmRib, 0, 7.2, 6, false, true);
-addBox(14, 7.2, 0.4, matWarmWall, 0, 3.6, 22, false, true);
-
-addBox(0.5, 8.2, 22, matDarkWall, -7.8, 4.1, -21, false, true);
-addBox(0.5, 8.2, 22, matDarkWall, 7.8, 4.1, -21, false, true);
-addBox(16, 0.5, 22, matDarkWall, 0, 8.2, -21, false, true);
-addBox(16, 8.2, 0.5, matDarkWall, 0, 4.1, -31.8, false, true);
-
-// Ribbed colonnade + suspended bronze linear pendant luminaires
-for (let z = 16; z >= -8; z -= 4.8) {
-  addBox(0.7, 7.0, 0.7, matWarmRib, -6.2, 3.5, z, true, true);
-  addBox(0.7, 7.0, 0.7, matWarmRib, 6.2, 3.5, z, true, true);
-  addBox(13.2, 0.55, 0.55, matWarmRib, 0, 6.8, z, true, true);
-  addBox(11.4, 0.05, 0.09, matWarmCove, 0, 6.5, z - 0.28, false, false);
-
-  // Suspended bronze linear gallery pendant hanging between beams
-  const pGroup = new THREE.Group();
-  pGroup.position.set(0, 5.25, z - 2.4);
-  const rodL = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 1.55, 8), matBronze);
-  rodL.position.set(-1.35, 0.78, 0);
-  const rodR = rodL.clone();
-  rodR.position.x = 1.35;
-  const bar = new THREE.Mesh(new THREE.BoxGeometry(3.1, 0.06, 0.08), matBronze);
-  const glow = new THREE.Mesh(new THREE.BoxGeometry(2.96, 0.025, 0.045), matWarmCove);
-  glow.position.y = -0.035;
-  pGroup.add(rodL, rodR, bar, glow);
-  scene.add(pGroup);
-}
-
-for (let i = 0; i < 4; i++) {
-  const z = -12 - i * 4.5;
-  addBox(0.55, 7.6, 0.55, matDarkWall, -5.8, 3.8, z, true, true);
-  addBox(0.55, 7.6, 0.55, matDarkWall, 5.8, 3.8, z, true, true);
-  addBox(12.1, 0.55, 0.55, matDarkWall, 0, 7.6, z, true, true);
-  const stripMat = i % 2 === 0 ? matRustGlow : matCaramelGlow;
-  addBox(0.08, 7.2, 0.08, stripMat, -5.5, 3.6, z, false, false);
-  addBox(0.08, 7.2, 0.08, stripMat, 5.5, 3.6, z, false, false);
-  addBox(11.1, 0.08, 0.08, stripMat, 0, 7.3, z, false, false);
-}
-
-// Sculptural 3D Couture Mannequin Bust Pedestals (LatheGeometry torso + fluted travertine plinth)
-const torsoProfile = [
-  new THREE.Vector2(0.01, 0.0),
-  new THREE.Vector2(0.16, 0.04),
-  new THREE.Vector2(0.19, 0.16),
-  new THREE.Vector2(0.145, 0.34),
-  new THREE.Vector2(0.22, 0.58),
-  new THREE.Vector2(0.245, 0.72),
-  new THREE.Vector2(0.13, 0.80),
-  new THREE.Vector2(0.075, 0.88),
-  new THREE.Vector2(0.068, 0.98),
-  new THREE.Vector2(0.01, 1.0)
-];
-const bustGeo = new THREE.LatheGeometry(torsoProfile, 28);
+const SET_KEY = params.get('set') || 'atelier';
+const mats = createSharedMaterials();
+const { matDarkWall, matPlinth, matBronze, matRustGlow, matCaramelGlow } = mats;
+const gltfLoader = new GLTFLoader();
 const sculpturalForms = [];
 
-function addCoutureBustPedestal(x, z, rotY = 0, darkFinish = false) {
-  const g = new THREE.Group();
-  g.position.set(x, 0, z);
-  g.rotation.y = rotY;
+const setDef = resolveSet(SET_KEY);
+const activeSet = setDef.build(scene, {
+  isMobile: IS_MOBILE_UA,
+  mats,
+  gltfLoader,
+  sculpturalForms
+});
+window.__activeSetId = activeSet.id;
 
-  const base = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.42, 0.46, 0.92, 20),
-    darkFinish ? matDarkWall : matPlinth
-  );
-  base.position.y = 0.46;
-  base.castShadow = true;
-  base.receiveShadow = true;
-  g.add(base);
-
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(0.43, 0.014, 10, 32),
-    darkFinish ? matRustGlow : matCaramelGlow
-  );
-  ring.rotation.x = Math.PI / 2;
-  ring.position.y = 0.92;
-  g.add(ring);
-
-  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.045, 0.34, 14), matBronze);
-  stem.position.y = 1.09;
-  g.add(stem);
-
-  const bust = new THREE.Mesh(bustGeo, darkFinish ? matBronze : matSculptObsidian);
-  bust.position.y = 1.22;
-  bust.scale.set(1.12, 1.05, 0.76);
-  bust.castShadow = true;
-  g.add(bust);
-
-  // Architectural draped Agbada shoulder collar accent
-  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.022, 12, 28), matBronze);
-  collar.rotation.x = Math.PI / 2;
-  collar.scale.set(1.18, 0.78, 1.0);
-  collar.position.y = 1.94;
-  g.add(collar);
-
-  scene.add(g);
-  sculpturalForms.push(bust);
+const elBrandTag = document.querySelector('.brand-pill .tag');
+if (elBrandTag) elBrandTag.textContent = `Paris · ${activeSet.name.replace(/^Paris\s+/i, '')}`;
+const elToggleSet = document.getElementById('toggle-set');
+if (elToggleSet) {
+  const keys = Object.keys(SET_REGISTRY);
+  const nextKey = keys[(keys.indexOf(activeSet.id) + 1) % keys.length];
+  elToggleSet.textContent = `Set: ${activeSet.name} ⇄`;
+  elToggleSet.addEventListener('click', () => {
+    const nextParams = new URLSearchParams(window.location.search);
+    nextParams.set('set', nextKey);
+    window.location.search = nextParams.toString();
+  });
 }
-
-// Flank the Atrium entrance & Runway Vault catwalk with 4 sculptural 3D couture busts
-addCoutureBustPedestal(-4.7, 15.2, 0.45, false);
-addCoutureBustPedestal(4.7, 15.2, -0.45, false);
-addCoutureBustPedestal(-4.3, -21.8, 0.5, true);
-addCoutureBustPedestal(4.3, -21.8, -0.5, true);
-
-function addGarmentRail(x, z, rotY = 0) {
-  const g = new THREE.Group();
-  g.position.set(x, 0, z);
-  g.rotation.y = rotY;
-  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 2.2, 12), matBronze);
-  bar.rotation.z = Math.PI / 2;
-  bar.position.y = 1.68;
-  g.add(bar);
-  for (const sx of [-1.05, 1.05]) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 1.7, 12), matBronze);
-    leg.position.set(sx, 0.85, 0);
-    g.add(leg);
-    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.04, 0.55), matBronze);
-    foot.position.set(sx, 0.02, 0);
-    g.add(foot);
+document.querySelectorAll('.zone-btn').forEach((btn) => {
+  const zi = Number(btn.dataset.zone);
+  if (activeSet.zoneLabels[zi]) {
+    const parts = activeSet.zoneLabels[zi].split(' · ');
+    btn.textContent = `${parts[0]} ${parts[1]?.split(' ').pop() || ''}`.trim();
   }
-  scene.add(g);
-}
-addGarmentRail(-5.4, 5.0, Math.PI / 2);
-addGarmentRail(5.4, 2.0, Math.PI / 2);
-
-const hemiLight = new THREE.HemisphereLight('#ffdcb8', '#140c08', 0.24);
-scene.add(hemiLight);
-
-const shadowRes = IS_MOBILE_UA ? 1024 : 2048;
-const sunSpot = new THREE.SpotLight('#ffd8a8', 95, 34, Math.PI / 4.8, 0.62, 1.4);
-sunSpot.position.set(2.8, 6.8, 14.5);
-sunSpot.target.position.set(-0.6, 0, 9.2);
-sunSpot.castShadow = true;
-sunSpot.shadow.mapSize.set(shadowRes, shadowRes);
-sunSpot.shadow.bias = -0.0005;
-scene.add(sunSpot, sunSpot.target);
-
-const corridorLight = new THREE.PointLight('#ffbd7a', 34, 20, 1.6);
-corridorLight.position.set(0, 5.2, -2.8);
-scene.add(corridorLight);
-
-const vaultRustLight = new THREE.PointLight('#c45628', 58, 26, 1.45);
-vaultRustLight.position.set(0, 5.0, -18.5);
-scene.add(vaultRustLight);
-
-const heroSpot = new THREE.SpotLight('#fff0dc', 130, 24, Math.PI / 6.8, 0.5, 1.25);
-heroSpot.position.set(0, 7.2, -20.8);
-heroSpot.target.position.set(0, 1.65, -24.0);
-heroSpot.castShadow = true;
-heroSpot.shadow.mapSize.set(shadowRes, shadowRes);
-heroSpot.shadow.bias = -0.0004;
-scene.add(heroSpot, heroSpot.target);
+});
 
 // ---------------------------------------------------------------------------
-// 4. Real ANIEZE Product Monoliths (Living Video Screens + iOS Autoplay Unlock)
+// 4. Real Product Display Screens (Living Video Screens + Single Source of Truth)
 // ---------------------------------------------------------------------------
 const texLoader = new THREE.TextureLoader();
 const interactables = [];
 const productNodes = new Map();
 const activeVideos = [];
-const collectedSet = new Set();
+const STORAGE_KEY = `atelier_collected_${BRAND_SLUG}`;
+const collectedSet = new Set((() => {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
+})());
+const walkerSystem = createWalkerSystem(scene, activeVideos);
 
 function loadProductTex(url) {
   const t = texLoader.load(url);
@@ -317,7 +183,7 @@ function attachVideoToMonolith(productId, videoUrl, label = 'Custom Video') {
   video.setAttribute('webkit-playsinline', '');
   video.setAttribute('muted', '');
   video.crossOrigin = 'anonymous';
-  video.preload = 'auto';
+  video.preload = IS_MOBILE_UA ? 'metadata' : 'auto';
 
   video.addEventListener('canplay', () => {
     video.play().catch(() => {});
@@ -340,6 +206,11 @@ function attachVideoToMonolith(productId, videoUrl, label = 'Custom Video') {
 }
 
 ANIEZE_PRODUCTS.forEach((prod, i) => {
+  const override = activeSet.productOverrides?.[prod.id];
+  if (override) {
+    prod.position = override.position;
+    prod.rotationY = override.rotationY;
+  }
   const group = new THREE.Group();
   group.position.set(prod.position[0], prod.position[1], prod.position[2]);
   group.rotation.y = prod.rotationY;
@@ -365,8 +236,8 @@ ANIEZE_PRODUCTS.forEach((prod, i) => {
   inlay.position.y = plinthH - 0.02;
   group.add(inlay);
 
-  const frameW = isHero ? 1.82 : 1.42;
-  const frameH = isHero ? 2.48 : 1.94;
+  const frameW = isHero ? 2.18 : 1.62;
+  const frameH = isHero ? 2.94 : 2.20;
   const frameY = plinthH + 0.14 + frameH / 2;
 
   const frameGroup = new THREE.Group();
@@ -418,9 +289,9 @@ ANIEZE_PRODUCTS.forEach((prod, i) => {
   interactables.push(backPlane);
 
   const beaconMat = new THREE.MeshStandardMaterial({
-    color: '#cf8c52',
-    emissive: '#b85024',
-    emissiveIntensity: 2.6,
+    color: collectedSet.has(prod.id) ? '#f4f2f3' : '#cf8c52',
+    emissive: collectedSet.has(prod.id) ? '#ffffff' : '#b85024',
+    emissiveIntensity: collectedSet.has(prod.id) ? 1.2 : 2.6,
     roughness: 0.2,
     metalness: 0.3
   });
@@ -440,104 +311,72 @@ ANIEZE_PRODUCTS.forEach((prod, i) => {
   }
 
   scene.add(group);
-  productNodes.set(prod.id, { group, frameGroup, frontMat, beacon, beaconMat, baseY: frameY, prod, videoEl: null, sourceLabel: 'Real Product Photo' });
+  productNodes.set(prod.id, { group, frameGroup, frontMat, backMat, beacon, beaconMat, baseY: frameY, prod, videoEl: null, sourceLabel: 'Real Product Photo' });
 });
 
-fetch('./assets/videos/manifest.json')
-  .then(r => r.ok ? r.json() : null)
-  .then(manifest => {
-    if (!manifest || !manifest.screens) return;
-    Object.entries(manifest.screens).forEach(([id, cfg]) => {
-      if (cfg && cfg.video) {
-        fetch(cfg.video, { method: 'HEAD' }).then(res => {
-          if (res.ok) attachVideoToMonolith(id, cfg.video, cfg.sourceLabel || 'Video Loop');
-        }).catch(() => {});
-      }
-    });
-  })
-  .catch(() => {});
-
-const dustCount = IS_MOBILE_UA ? 140 : 280;
-const dustGeo = new THREE.BufferGeometry();
-const dustPos = new Float32Array(dustCount * 3);
-for (let i = 0; i < dustCount; i++) {
-  dustPos[i * 3] = (Math.random() - 0.5) * 12.5;
-  dustPos[i * 3 + 1] = 0.4 + Math.random() * 6.2;
-  dustPos[i * 3 + 2] = 18 - Math.random() * 48;
+function getVisibleProducts() {
+  return ANIEZE_PRODUCTS.filter((p) => {
+    const n = productNodes.get(p.id);
+    return n && n.group.visible !== false;
+  });
 }
-dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
-const dustMat = new THREE.PointsMaterial({ color: '#f7cfa0', size: 0.048, transparent: true, opacity: 0.52 });
-const dustPoints = new THREE.Points(dustGeo, dustMat);
-scene.add(dustPoints);
 
 // ---------------------------------------------------------------------------
-// 5. Cinematic Camera Spline (16:9 Widescreen 36s & 9:16 Vertical 68s)
+// 5. Unified Slow 96s Continuous 3D Walk-Through Choreography (16:9 & 9:16)
 // ---------------------------------------------------------------------------
-const TOUR_DURATION = 36.0;
-const camPath = new THREE.CatmullRomCurve3([
-  new THREE.Vector3(0.0, 1.85, 18.4),
-  new THREE.Vector3(-1.1, 1.75, 13.6),
-  new THREE.Vector3(1.1, 1.72, 10.6),
-  new THREE.Vector3(0.0, 1.68, 4.2),
-  new THREE.Vector3(-1.0, 1.66, 0.8),
-  new THREE.Vector3(1.0, 1.66, -2.5),
-  new THREE.Vector3(0.0, 1.68, -10.5),
-  new THREE.Vector3(-1.0, 1.65, -14.2),
-  new THREE.Vector3(0.0, 1.82, -19.0),
-  new THREE.Vector3(0.0, 1.88, -20.2)
-]);
-
-const lookPath = new THREE.CatmullRomCurve3([
-  new THREE.Vector3(0.0, 1.65, 9.0),
-  new THREE.Vector3(-3.4, 1.55, 10.5),
-  new THREE.Vector3(3.4, 1.55, 8.2),
-  new THREE.Vector3(0.0, 1.55, -3.0),
-  new THREE.Vector3(-3.3, 1.5, -1.5),
-  new THREE.Vector3(3.3, 1.5, -4.5),
-  new THREE.Vector3(0.0, 1.65, -24.0),
-  new THREE.Vector3(-3.3, 1.5, -16.5),
-  new THREE.Vector3(0.0, 1.9, -24.0),
-  new THREE.Vector3(0.0, 1.92, -24.0)
-]);
-
 const IS_VERTICAL = params.get('vertical') === '1' || window.innerHeight > window.innerWidth;
-const ACTIVE_DURATION = IS_VERTICAL ? 68.0 : TOUR_DURATION;
+const ACTIVE_DURATION = 96.0;
+window.__ACTIVE_DURATION = ACTIVE_DURATION;
 
 function monolithShot(prod, dist) {
   const isHero = prod.id === 'elara-trench';
   const frameY = isHero ? (0.55 + 0.14 + 2.48 / 2) : (0.48 + 0.14 + 1.94 / 2);
   const fwd = new THREE.Vector3(Math.sin(prod.rotationY), 0, Math.cos(prod.rotationY));
-  const target = new THREE.Vector3(prod.position[0], frameY - 0.12, prod.position[2]);
-  const pos = new THREE.Vector3(prod.position[0], frameY - 0.04, prod.position[2]).addScaledVector(fwd, dist);
+  const target = new THREE.Vector3(prod.position[0], frameY - 0.10, prod.position[2]);
+  const pos = new THREE.Vector3(prod.position[0], frameY - 0.02, prod.position[2]).addScaledVector(fwd, dist);
   return { pos, look: target };
 }
 
-const pShots = ANIEZE_PRODUCTS.map((p, i) => monolithShot(p, i === 5 ? 4.45 : 3.45));
-const VERTICAL_KEYFRAMES = [
-  { t: 0.0,  pos: new THREE.Vector3(0.0, 1.85, 18.8), look: new THREE.Vector3(0.0, 1.65, 6.0) },
-  { t: 4.0,  pos: new THREE.Vector3(0.0, 1.78, 15.2), look: new THREE.Vector3(0.0, 1.60, 6.0) },
-  { t: 6.2,  pos: pShots[0].pos, look: pShots[0].look },
-  { t: 11.7, pos: pShots[0].pos.clone().add(new THREE.Vector3(0.06, 0.03, -0.08)), look: pShots[0].look },
-  { t: 14.0, pos: new THREE.Vector3(0.0, 1.75, 12.6), look: new THREE.Vector3(0.5, 1.60, 5.0) },
-  { t: 16.2, pos: pShots[1].pos, look: pShots[1].look },
-  { t: 22.0, pos: pShots[1].pos.clone().add(new THREE.Vector3(-0.06, 0.03, -0.08)), look: pShots[1].look },
-  { t: 24.5, pos: new THREE.Vector3(0.0, 1.72, 4.8), look: new THREE.Vector3(0.0, 1.58, -5.0) },
-  { t: 26.8, pos: pShots[2].pos, look: pShots[2].look },
-  { t: 31.6, pos: pShots[2].pos.clone().add(new THREE.Vector3(0.06, 0.02, -0.08)), look: pShots[2].look },
-  { t: 34.0, pos: new THREE.Vector3(0.0, 1.72, 0.4), look: new THREE.Vector3(0.4, 1.58, -8.0) },
-  { t: 36.2, pos: pShots[3].pos, look: pShots[3].look },
-  { t: 41.0, pos: pShots[3].pos.clone().add(new THREE.Vector3(-0.06, 0.02, -0.08)), look: pShots[3].look },
-  { t: 43.5, pos: new THREE.Vector3(0.0, 1.74, -10.5), look: new THREE.Vector3(0.0, 1.65, -24.0) },
-  { t: 45.8, pos: pShots[4].pos, look: pShots[4].look },
-  { t: 50.6, pos: pShots[4].pos.clone().add(new THREE.Vector3(0.06, 0.02, -0.08)), look: pShots[4].look },
-  { t: 53.0, pos: new THREE.Vector3(0.0, 1.78, -15.8), look: new THREE.Vector3(0.0, 1.85, -24.0) },
-  { t: 56.2, pos: pShots[5].pos, look: pShots[5].look },
-  { t: 64.7, pos: pShots[5].pos.clone().add(new THREE.Vector3(0.0, 0.04, -0.45)), look: pShots[5].look },
-  { t: 68.0, pos: pShots[5].pos.clone().add(new THREE.Vector3(0.0, 0.04, -0.55)), look: pShots[5].look }
+const pShots = ANIEZE_PRODUCTS.map((p, i) => {
+  const baseDist = IS_VERTICAL ? (i === 5 ? 4.55 : 3.55) : (i === 5 ? 4.10 : 3.20);
+  return monolithShot(p, baseDist);
+});
+
+const CINEMA_KEYFRAMES = [
+  { t: 0.0,  pos: new THREE.Vector3(0.0, 1.88, 19.2), look: new THREE.Vector3(0.0, 1.65, 6.0) },
+  { t: 5.5,  pos: new THREE.Vector3(0.0, 1.78, 14.8), look: new THREE.Vector3(-0.6, 1.62, 6.5) },
+  { t: 8.5,  pos: pShots[0].pos, look: pShots[0].look },
+  { t: 16.5, pos: pShots[0].pos.clone().add(new THREE.Vector3(0.14, 0.04, -0.14)), look: pShots[0].look },
+  { t: 20.0, pos: new THREE.Vector3(0.0, 1.75, 11.4), look: new THREE.Vector3(0.9, 1.60, 5.5) },
+  { t: 22.2, pos: pShots[1].pos, look: pShots[1].look },
+  { t: 29.8, pos: pShots[1].pos.clone().add(new THREE.Vector3(-0.14, 0.04, -0.14)), look: pShots[1].look },
+  { t: 33.0, pos: new THREE.Vector3(0.0, 1.72, 4.6), look: new THREE.Vector3(0.0, 1.58, -6.0) },
+  { t: 36.0, pos: pShots[2].pos, look: pShots[2].look },
+  { t: 44.5, pos: pShots[2].pos.clone().add(new THREE.Vector3(0.14, 0.03, -0.14)), look: pShots[2].look },
+  { t: 48.0, pos: new THREE.Vector3(0.0, 1.72, -0.2), look: new THREE.Vector3(0.8, 1.58, -8.5) },
+  { t: 50.2, pos: pShots[3].pos, look: pShots[3].look },
+  { t: 57.8, pos: pShots[3].pos.clone().add(new THREE.Vector3(-0.14, 0.03, -0.14)), look: pShots[3].look },
+  { t: 62.0, pos: new THREE.Vector3(0.0, 1.74, -10.4), look: new THREE.Vector3(0.0, 1.68, -24.0) },
+  { t: 65.5, pos: pShots[4].pos, look: pShots[4].look },
+  { t: 74.0, pos: pShots[4].pos.clone().add(new THREE.Vector3(0.14, 0.03, -0.14)), look: pShots[4].look },
+  { t: 77.5, pos: new THREE.Vector3(0.0, 1.80, -16.8), look: new THREE.Vector3(0.0, 1.88, -24.0) },
+  { t: 80.0, pos: pShots[5].pos, look: pShots[5].look },
+  { t: 92.5, pos: pShots[5].pos.clone().add(new THREE.Vector3(0.0, 0.06, -0.55)), look: pShots[5].look },
+  { t: 96.0, pos: pShots[5].pos.clone().add(new THREE.Vector3(0.0, 0.06, -0.65)), look: pShots[5].look }
 ];
 
-function sampleVerticalCamera(t) {
-  const kfs = VERTICAL_KEYFRAMES;
+const VIDEO_SYNC_TRIGGERS = [
+  { t: 6.8,  id: 'shiny-jagaban' },
+  { t: 20.5, id: 'nkisi-trench' },
+  { t: 34.2, id: 'nomad-look-15' },
+  { t: 48.5, id: 'nomad-look-21' },
+  { t: 63.8, id: 'nomad-look-23' },
+  { t: 77.5, id: 'elara-trench' }
+];
+const triggeredSyncs = new Set();
+
+function sampleCinemaCamera(t) {
+  const kfs = CINEMA_KEYFRAMES;
   if (t <= kfs[0].t) return { pos: kfs[0].pos.clone(), look: kfs[0].look.clone() };
   if (t >= kfs[kfs.length - 1].t) return { pos: kfs[kfs.length - 1].pos.clone(), look: kfs[kfs.length - 1].look.clone() };
   for (let i = 0; i < kfs.length - 1; i++) {
@@ -554,22 +393,17 @@ function sampleVerticalCamera(t) {
   return { pos: kfs[0].pos.clone(), look: kfs[0].look.clone() };
 }
 
-const CINEMA_BEATS = IS_VERTICAL ? [
-  { t0: 0.4,  t1: 3.9,  zone: '01 · The Atrium', eyebrow: 'ANIEZE · Paris', title: 'Enter the 3D Atelier', sub: '6 live screens · Couture & NOMAD Paris Runway' },
-  { t0: 5.8,  t1: 12.1, zone: '01 · The Atrium', eyebrow: 'Piece 01 · €320 · 1080p 360° Screen', title: 'Shiny Jagaban Sweater', sub: 'Metallic-fleck knit · Sculpted Agbada shoulders' },
-  { t0: 15.8, t1: 22.4, zone: '01 · The Atrium', eyebrow: 'Piece 02 · €680 · 1080p 360° Screen', title: 'Nkisi Layered Trench', sub: 'Wool & lambskin scales · 360° atelier screen' },
-  { t0: 26.4, t1: 32.0, zone: '02 · Craft Corridor', eyebrow: 'Piece 03 · NOMAD Paris Runway', title: 'NOMAD Look 15 — Moto & Wrap', sub: 'Structured leather moto · Floor-length draped wrap' },
-  { t0: 35.8, t1: 41.4, zone: '02 · Craft Corridor', eyebrow: 'Piece 04 · NOMAD Paris Runway', title: 'NOMAD Look 21 — Painted Art Jacket', sub: 'Hand-painted monochrome print · Wide tailored wool' },
-  { t0: 45.4, t1: 51.0, zone: '03 · Runway Vault', eyebrow: 'Piece 05 · NOMAD Paris Runway', title: 'NOMAD Look 23 — Sculpted Knit', sub: 'Agbada shoulder knit · Ribbed sand tailoring' },
-  { t0: 55.6, t1: 64.4, zone: '03 · Runway Vault', eyebrow: 'Piece 06 · €790 · Paris Atelier Finale', title: 'Elara Lambskin Trench', sub: 'Full-length burnished lambskin · Live boutique film' }
-] : [
-  { t0: 0.4,  t1: 4.2,  zone: '01 · The Atrium', eyebrow: 'ANIEZE · Paris', title: 'Enter the 3D Atelier', sub: '6 live screens · Couture & NOMAD Paris Runway — built to explore and collect.' },
-  { t0: 4.8,  t1: 8.8,  zone: '01 · The Atrium', eyebrow: 'Piece 01 · €320 · 1080p 360° Screen', title: 'Shiny Jagaban Sweater', sub: 'Metallic-fleck knit · Sculpted Agbada shoulders' },
-  { t0: 9.4,  t1: 13.6, zone: '01 · The Atrium', eyebrow: 'Piece 02 · €680 · 1080p 360° Screen', title: 'Nkisi Layered Trench', sub: 'Wool & lambskin scales · 360° atelier screen' },
-  { t0: 15.0, t1: 19.2, zone: '02 · Craft Corridor', eyebrow: 'Piece 03 · NOMAD Paris Runway', title: 'NOMAD Look 15 — Moto & Wrap', sub: 'Structured leather moto · Floor-length draped wrap' },
-  { t0: 19.8, t1: 23.8, zone: '02 · Craft Corridor', eyebrow: 'Piece 04 · NOMAD Paris Runway', title: 'NOMAD Look 21 — Painted Art Jacket', sub: 'Hand-painted monochrome print · Wide tailored wool' },
-  { t0: 25.4, t1: 29.2, zone: '03 · Runway Vault', eyebrow: 'Piece 05 · NOMAD Paris Runway', title: 'NOMAD Look 23 — Sculpted Knit', sub: 'Agbada shoulder knit · Ribbed sand tailoring' },
-  { t0: 29.8, t1: 33.0, zone: '03 · Runway Vault', eyebrow: 'Piece 06 · €790 · Paris Atelier Finale', title: 'Elara Lambskin Trench', sub: 'Full-length burnished lambskin · Live boutique film' }
+const z0 = activeSet.zoneLabels[0] || '01 · The Atrium';
+const z1 = activeSet.zoneLabels[1] || '02 · Craft Corridor';
+const z2 = activeSet.zoneLabels[2] || '03 · Runway Vault';
+const CINEMA_BEATS = [
+  { t0: 0.6,  t1: 5.8,  slug: null, zone: z0, eyebrow: `${activeBrand.name} · Paris`, title: activeSet.introTitle || 'Enter the 3D Atelier', sub: 'Live display screens · Couture & Runway' },
+  { t0: 8.2,  t1: 16.6, slug: 'shiny-jagaban', zone: z0, eyebrow: 'Piece 01 · €320 · 1080p 360° Screen', title: 'Shiny Jagaban Sweater', sub: 'Metallic-fleck knit · Sculpted Agbada shoulders' },
+  { t0: 21.8, t1: 29.8, slug: 'nkisi-trench', zone: z0, eyebrow: 'Piece 02 · €680 · 1080p 360° Screen', title: 'Nkisi Layered Trench', sub: 'Wool & lambskin scales · 360° atelier screen' },
+  { t0: 35.6, t1: 44.5, slug: 'nomad-look-15', zone: z1, eyebrow: 'Piece 03 · NOMAD Paris Runway', title: 'NOMAD Look 15 — Moto & Wrap', sub: 'Structured leather moto · Floor-length draped wrap' },
+  { t0: 49.8, t1: 57.8, slug: 'nomad-look-21', zone: z1, eyebrow: 'Piece 04 · NOMAD Paris Runway', title: 'NOMAD Look 21 — Painted Art Jacket', sub: 'Hand-painted monochrome print · Wide tailored wool' },
+  { t0: 65.0, t1: 74.0, slug: 'nomad-look-23', zone: z2, eyebrow: 'Piece 05 · NOMAD Paris Runway', title: 'NOMAD Look 23 — Sculpted Knit', sub: 'Agbada shoulder knit · Ribbed sand tailoring' },
+  { t0: 79.5, t1: 92.2, slug: 'elara-trench', zone: z2, eyebrow: 'Piece 06 · €790 · Paris Atelier Finale', title: 'Elara Lambskin Trench', sub: 'Full-length burnished lambskin · Live boutique film' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -609,7 +443,9 @@ const elDrawerMaterial = document.getElementById('drawer-material');
 const elDrawerStory = document.getElementById('drawer-story');
 const elBtnCollect = document.getElementById('btn-collect');
 const elBtnShop = document.getElementById('btn-shop');
+const elBtnShareLook = document.getElementById('btn-share-look');
 const elCollectedCount = document.getElementById('collected-count');
+const elCollectedTotal = document.getElementById('collected-total');
 const elProgressFill = document.getElementById('progress-fill');
 const elToggleTour = document.getElementById('toggle-tour');
 
@@ -630,7 +466,6 @@ const elStepPrev = document.getElementById('step-prev');
 const elStepNext = document.getElementById('step-next');
 const elStepLabel = document.getElementById('step-label');
 
-// Auto-dismiss onboarding hint after 5.5s or first interaction
 function dismissOnboard() {
   if (elOnboard && !elOnboard.classList.contains('hidden')) {
     elOnboard.classList.add('hidden');
@@ -642,7 +477,6 @@ if (elOnboard) {
   window.addEventListener('keydown', dismissOnboard, { once: true, passive: true });
 }
 
-// Optional Ambient Soundtrack Toggle
 const ambientAudio = new Audio('./assets/audio/tech_house_vibes.mp3');
 ambientAudio.loop = true;
 ambientAudio.volume = 0.35;
@@ -665,23 +499,56 @@ if (elToggleAudio) {
   });
 }
 
-// Share Atelier Link (Web Share API on mobile, Clipboard fallback on desktop)
+function buildDeepLinkUrl(lookSlug = null) {
+  const u = new URL(window.location.origin + window.location.pathname);
+  if (activeBrand.slug !== 'anieze') u.searchParams.set('brand', activeBrand.slug);
+  u.searchParams.set('set', activeSet.id);
+  if (lookSlug) u.searchParams.set('look', lookSlug);
+  return u.toString();
+}
+
 if (elShareBtn) {
   elShareBtn.addEventListener('click', async () => {
-    const shareUrl = window.location.origin + window.location.pathname;
+    const shareUrl = buildDeepLinkUrl(activeProductId);
     if (navigator.share) {
       try {
-        await navigator.share({ title: 'ANIEZE — Interactive 3D Atelier', text: 'Explore the ANIEZE 3D Paris Atelier', url: shareUrl });
+        await navigator.share({ title: `${activeBrand.name} — Interactive 3D Showroom`, text: `Explore ${activeBrand.name} in 3D`, url: shareUrl });
         return;
       } catch {}
     }
     try {
       await navigator.clipboard.writeText(shareUrl);
       elShareBtn.textContent = 'Link Copied ✓';
-      setTimeout(() => { elShareBtn.textContent = 'Share 3D Atelier Link'; }, 2200);
+      setTimeout(() => { elShareBtn.textContent = 'Share 3D Showroom Link'; }, 2200);
     } catch {
       elShareBtn.textContent = shareUrl;
     }
+  });
+}
+
+if (elBtnShareLook) {
+  elBtnShareLook.addEventListener('click', async () => {
+    if (!activeProductId) return;
+    const url = buildDeepLinkUrl(activeProductId);
+    try {
+      await navigator.clipboard.writeText(url);
+      elBtnShareLook.textContent = 'Direct Look Link Copied ✓';
+      setTimeout(() => { elBtnShareLook.textContent = 'Copy direct link to this look'; }, 2200);
+    } catch {
+      elBtnShareLook.textContent = url;
+    }
+  });
+}
+
+if (elBtnShop) {
+  elBtnShop.addEventListener('click', () => {
+    trackShowroomEvent({
+      brandId: activeBrand.id,
+      setSlug: activeSet.id,
+      itemSlug: activeProductId,
+      eventType: 'cta_click',
+      meta: { href: elBtnShop.href }
+    });
   });
 }
 
@@ -734,34 +601,29 @@ if (elJoystick && elJoyKnob) {
   elJoystick.addEventListener('pointercancel', resetJoy);
 }
 
-const swapInput = document.getElementById('swap-video-input');
-const swapBtn = document.getElementById('btn-swap-video');
-if (swapBtn && swapInput) {
-  swapBtn.addEventListener('click', () => swapInput.click());
-  swapInput.addEventListener('change', (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !activeProductId) return;
-    const blobUrl = URL.createObjectURL(file);
-    attachVideoToMonolith(activeProductId, blobUrl, file.name);
-    swapBtn.textContent = `Playing: ${file.name.slice(0, 22)}`;
-  });
-}
-
 function updateProgressUI() {
-  const count = collectedSet.size;
+  const visibleProds = getVisibleProducts();
+  const total = Math.max(1, visibleProds.length);
+  const count = visibleProds.filter(p => collectedSet.has(p.id)).length;
   elCollectedCount.textContent = String(count);
-  elProgressFill.style.width = `${(count / ANIEZE_PRODUCTS.length) * 100}%`;
-  if (count === ANIEZE_PRODUCTS.length) {
-    vaultRustLight.intensity = 90;
-    elModalEyebrow.textContent = 'Atelier Unlocked · 6 / 6 Collected';
-    elModalTitle.textContent = 'Your curated ANIEZE drop is ready';
+  if (elCollectedTotal) elCollectedTotal.textContent = String(visibleProds.length);
+  elProgressFill.style.width = `${(count / total) * 100}%`;
+  if (visibleProds.length > 0 && count === visibleProds.length) {
+    activeSet.unlockAllGlow();
+    elModalEyebrow.textContent = `Showroom Unlocked · ${count} / ${visibleProds.length} Collected`;
+    elModalTitle.textContent = `Your curated ${activeBrand.name} drop is ready`;
     if (elVipBanner) elVipBanner.classList.add('show');
+  } else {
+    elModalEyebrow.textContent = 'Your Atelier Bag';
+    elModalTitle.textContent = `Discover all ${visibleProds.length} pieces to unlock the drop`;
+    if (elVipBanner) elVipBanner.classList.remove('show');
   }
   renderLookbookGrid();
 }
 
 function renderLookbookGrid() {
-  elModalGrid.innerHTML = ANIEZE_PRODUCTS.map(p => {
+  const visibleProds = getVisibleProducts();
+  elModalGrid.innerHTML = visibleProds.map(p => {
     const unlocked = collectedSet.has(p.id);
     return `
       <a class="mini-card ${unlocked ? '' : 'locked'}" href="${p.url}" target="_blank" rel="noopener">
@@ -772,21 +634,23 @@ function renderLookbookGrid() {
     `;
   }).join('');
 }
-renderLookbookGrid();
+updateProgressUI();
 
 function focusPiece(idx, openDrawer = false) {
-  const safeIdx = ((idx % ANIEZE_PRODUCTS.length) + ANIEZE_PRODUCTS.length) % ANIEZE_PRODUCTS.length;
+  const visibleProds = getVisibleProducts();
+  if (!visibleProds.length) return;
+  const safeIdx = ((idx % visibleProds.length) + visibleProds.length) % visibleProds.length;
   currentPieceIdx = safeIdx;
-  const p = ANIEZE_PRODUCTS[safeIdx];
+  const p = visibleProds[safeIdx];
   const node = productNodes.get(p.id);
   if (!node) return;
 
-  if (elStepLabel) elStepLabel.textContent = `${p.index} / 06`;
+  if (elStepLabel) elStepLabel.textContent = `${String(safeIdx + 1).padStart(2, '0')} / ${String(visibleProds.length).padStart(2, '0')}`;
   const portrait = window.innerHeight > window.innerWidth;
   const dist = p.id === 'elara-trench' ? (portrait ? 4.4 : 3.8) : (portrait ? 3.55 : 3.15);
-  const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), p.rotationY);
-  targetCamPos = new THREE.Vector3(p.position[0], 1.72, p.position[2]).addScaledVector(forward, dist);
-  targetLookAt = new THREE.Vector3(p.position[0], node.baseY - 0.08, p.position[2]);
+  const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), node.group.rotation.y);
+  targetCamPos = new THREE.Vector3(node.group.position.x, 1.72, node.group.position.z).addScaledVector(forward, dist);
+  targetLookAt = new THREE.Vector3(node.group.position.x, node.baseY - 0.08, node.group.position.z);
 
   const dir = targetLookAt.clone().sub(targetCamPos).normalize();
   yaw = Math.atan2(-dir.x, -dir.z);
@@ -802,52 +666,68 @@ if (elStepPrev && elStepNext) {
   elStepPrev.addEventListener('click', () => {
     mode = 'explore';
     document.body.classList.remove('tour-active');
-    elDrawer.classList.remove('open');
-    focusPiece(currentPieceIdx <= 0 ? ANIEZE_PRODUCTS.length - 1 : currentPieceIdx - 1, false);
+    closeProductDrawer();
+    const visibleCount = Math.max(1, getVisibleProducts().length);
+    focusPiece(currentPieceIdx <= 0 ? visibleCount - 1 : currentPieceIdx - 1, false);
   });
   elStepNext.addEventListener('click', () => {
     mode = 'explore';
     document.body.classList.remove('tour-active');
-    elDrawer.classList.remove('open');
+    closeProductDrawer();
     focusPiece(currentPieceIdx + 1, false);
   });
 }
 
+function closeProductDrawer() {
+  elDrawer.classList.remove('open');
+  elDrawer.setAttribute('aria-hidden', 'true');
+  activeProductId = null;
+  targetCamPos = null;
+}
+
 function openProductDrawer(id) {
   const node = productNodes.get(id);
-  if (!node) return;
+  if (!node || !node.group.visible) return;
   activeProductId = id;
   showingAltImg = false;
   const p = node.prod;
-  currentPieceIdx = ANIEZE_PRODUCTS.findIndex(item => item.id === id);
-  if (elStepLabel && currentPieceIdx >= 0) elStepLabel.textContent = `${p.index} / 06`;
+  const visibleProds = getVisibleProducts();
+  currentPieceIdx = visibleProds.findIndex(item => item.id === id);
+  if (elStepLabel && currentPieceIdx >= 0) {
+    elStepLabel.textContent = `${String(currentPieceIdx + 1).padStart(2, '0')} / ${String(visibleProds.length).padStart(2, '0')}`;
+  }
 
   elDrawerIndex.textContent = `Piece ${p.index} · ${p.zone} · ${node.sourceLabel}`;
   elDrawerImg.src = p.frontImg;
+  elDrawerImg.alt = p.title;
   elDrawerTitle.textContent = p.title;
   elDrawerPrice.textContent = p.price;
   elDrawerMaterial.textContent = p.material;
   elDrawerStory.textContent = p.story;
-  elBtnShop.href = p.url;
-  if (swapBtn) swapBtn.textContent = 'Swap screen video (.mp4)';
+  elBtnShop.href = p.url || activeBrand.shopUrl;
+  elBtnShop.textContent = p.ctaLabel || (p.ctaType === 'enquire' ? 'Enquire about this look →' : (p.ctaType === 'edition' ? 'Reserve numbered Edition →' : `Shop on ${activeBrand.name} →`));
 
   const isCol = collectedSet.has(id);
   elBtnCollect.textContent = isCol ? 'Collected in your Atelier Bag ✓' : 'Collect piece (+1)';
   elBtnCollect.classList.toggle('collected', isCol);
   elDrawer.classList.add('open');
+  elDrawer.setAttribute('aria-hidden', 'false');
+
+  trackShowroomEvent({
+    brandId: activeBrand.id,
+    setSlug: activeSet.id,
+    itemSlug: id,
+    eventType: 'look_click'
+  });
 
   const portrait = window.innerHeight > window.innerWidth;
   const dist = p.id === 'elara-trench' ? (portrait ? 4.4 : 3.8) : (portrait ? 3.55 : 3.15);
-  const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), p.rotationY);
-  targetCamPos = new THREE.Vector3(p.position[0], 1.75, p.position[2]).addScaledVector(forward, dist);
-  targetLookAt = new THREE.Vector3(p.position[0], node.baseY, p.position[2]);
+  const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), node.group.rotation.y);
+  targetCamPos = new THREE.Vector3(node.group.position.x, 1.75, node.group.position.z).addScaledVector(forward, dist);
+  targetLookAt = new THREE.Vector3(node.group.position.x, node.baseY, node.group.position.z);
 }
 
-document.getElementById('drawer-close').addEventListener('click', () => {
-  elDrawer.classList.remove('open');
-  activeProductId = null;
-  targetCamPos = null;
-});
+document.getElementById('drawer-close').addEventListener('click', closeProductDrawer);
 
 document.getElementById('angle-toggle').addEventListener('click', () => {
   if (!activeProductId) return;
@@ -859,6 +739,7 @@ document.getElementById('angle-toggle').addEventListener('click', () => {
 elBtnCollect.addEventListener('click', () => {
   if (!activeProductId) return;
   collectedSet.add(activeProductId);
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(collectedSet))); } catch {}
   const node = productNodes.get(activeProductId);
   node.beaconMat.color.set('#f4f2f3');
   node.beaconMat.emissive.set('#ffffff');
@@ -866,7 +747,13 @@ elBtnCollect.addEventListener('click', () => {
   elBtnCollect.textContent = 'Collected in your Atelier Bag ✓';
   elBtnCollect.classList.add('collected');
   updateProgressUI();
-  if (collectedSet.size === ANIEZE_PRODUCTS.length) {
+  trackShowroomEvent({
+    brandId: activeBrand.id,
+    setSlug: activeSet.id,
+    itemSlug: activeProductId,
+    eventType: 'collect'
+  });
+  if (collectedSet.size === getVisibleProducts().length) {
     setTimeout(() => elModal.classList.add('open'), 450);
   }
 });
@@ -887,7 +774,7 @@ document.querySelectorAll('.zone-btn').forEach(btn => {
     elToggleTour.textContent = 'Watch Film';
     elCinemaOverlay.classList.remove('visible');
     elCinemaEndcard.classList.remove('show');
-    elDrawer.classList.remove('open');
+    closeProductDrawer();
     const idx = Number(btn.dataset.zone);
     document.querySelectorAll('.zone-btn').forEach(b => b.classList.toggle('active', b === btn));
     targetCamPos = ZONE_VIEWS[idx].pos.clone();
@@ -908,9 +795,10 @@ elToggleTour.addEventListener('click', () => {
     mode = 'tour';
     tourTime = 0;
     document.body.classList.add('tour-active');
-    elDrawer.classList.remove('open');
+    closeProductDrawer();
     elToggleTour.textContent = 'Exit Film';
     elCinemaOverlay.classList.add('visible');
+    trackShowroomEvent({ brandId: activeBrand.id, setSlug: activeSet.id, eventType: 'film_start' });
   }
 });
 
@@ -946,14 +834,23 @@ const endLook = (e) => {
     raycaster.setFromCamera(pointer, camera);
     const hits = raycaster.intersectObjects(interactables, false);
     if (hits.length > 0 && hits[0].object.userData.productId) {
-      openProductDrawer(hits[0].object.userData.productId);
+      const hitNode = productNodes.get(hits[0].object.userData.productId);
+      if (hitNode && hitNode.group.visible) {
+        openProductDrawer(hits[0].object.userData.productId);
+      }
     }
   }
 };
 window.addEventListener('pointerup', endLook);
 window.addEventListener('pointercancel', () => { lookPointerId = null; });
 
-window.addEventListener('keydown', (e) => { keys[e.code] = true; });
+window.addEventListener('keydown', (e) => {
+  keys[e.code] = true;
+  if (e.code === 'Escape') {
+    closeProductDrawer();
+    elModal.classList.remove('open');
+  }
+});
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
 window.addEventListener('resize', () => {
@@ -962,6 +859,90 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+// ---------------------------------------------------------------------------
+// Live Multi-Tenant Supabase Sync + Admin Editor + Deep-Link Hydration
+// ---------------------------------------------------------------------------
+let adminController = null;
+const hydratedFromHash = hydrateSessionFromHash();
+if ((params.get('admin') === '1' || hydratedFromHash || getAdminSession().token) && !IS_RENDER) {
+  adminController = initAdminEditor({
+    scene,
+    camera,
+    renderer,
+    activeSetId: activeSet.id,
+    activeBrand,
+    productNodes,
+    interactables,
+    attachVideoToMonolith,
+    onVisibilityChanged: updateProgressUI
+  });
+}
+
+fetchBrandContext(BRAND_SLUG, activeSet.id).then(({ brand, items, connected }) => {
+  window.__supabaseConnected = connected;
+  if (brand) applyBrandIdentity(brand);
+
+  if (connected && items.length > 0) {
+    const bySlug = new Map(items.filter(r => r.item_type === 'monolith').map(r => [r.slug, r]));
+    productNodes.forEach((node, slug) => {
+      const row = bySlug.get(slug);
+      if (!row || row.is_visible === false) {
+        node.group.visible = false;
+        return;
+      }
+      node.group.visible = true;
+      node.group.position.set(row.pos_x, row.pos_y, row.pos_z);
+      node.group.rotation.y = row.rot_y;
+      if (row.scale && row.scale !== 1) node.group.scale.set(row.scale, row.scale, row.scale);
+      node.prod.position = [row.pos_x, row.pos_y, row.pos_z];
+      node.prod.rotationY = row.rot_y;
+      if (row.title) node.prod.title = row.title;
+      if (row.price) node.prod.price = row.price;
+      if (row.material) node.prod.material = row.material;
+      if (row.story) node.prod.story = row.story;
+      if (row.cta_type) node.prod.ctaType = row.cta_type;
+      if (row.cta_url) node.prod.url = row.cta_url;
+      if (row.video_url) attachVideoToMonolith(slug, row.video_url, 'Brand Video');
+    });
+    updateProgressUI();
+  }
+
+  if (adminController && adminController.refreshFromScene) {
+    adminController.refreshFromScene(activeBrand);
+  }
+
+  if (!IS_RENDER) {
+    trackShowroomEvent({
+      brandId: activeBrand.id,
+      setSlug: activeSet.id,
+      itemSlug: DEEP_LINK_LOOK,
+      eventType: IS_EMBED ? 'embed_view' : 'view'
+    });
+  }
+
+  // Deep-link directly to a specific look if ?look=<slug> is present
+  if (DEEP_LINK_LOOK && productNodes.has(DEEP_LINK_LOOK) && !IS_RENDER) {
+    const targetNode = productNodes.get(DEEP_LINK_LOOK);
+    if (targetNode && targetNode.group.visible) {
+      openProductDrawer(DEEP_LINK_LOOK);
+    }
+  }
+}).catch(() => {});
+
+fetch('./assets/videos/manifest.json')
+  .then(r => r.ok ? r.json() : null)
+  .then(manifest => {
+    if (!manifest || !manifest.screens || BRAND_SLUG !== 'anieze') return;
+    Object.entries(manifest.screens).forEach(([id, cfg]) => {
+      if (cfg && cfg.video) {
+        fetch(cfg.video, { method: 'HEAD' }).then(res => {
+          if (res.ok) attachVideoToMonolith(id, cfg.video, cfg.sourceLabel || 'Video Loop');
+        }).catch(() => {});
+      }
+    });
+  })
+  .catch(() => {});
 
 // ---------------------------------------------------------------------------
 // 7. Scene Update & Deterministic Frame-Stepping Hook
@@ -977,36 +958,42 @@ function updateSceneAtTime(t) {
   sculpturalForms.forEach((b, bi) => {
     b.rotation.y = Math.sin(t * 0.35 + bi * 1.5) * 0.14;
   });
-  dustPoints.position.y = Math.sin(t * 0.35) * 0.12;
+  activeSet.ambientUpdate(t);
+  walkerSystem.update(t, camera);
 
   const BPM = 124;
   const beatPhase = (t * (BPM / 60)) % 1;
   const beatKick = Math.pow(1 - beatPhase, 3.2);
-  matRustGlow.emissiveIntensity = 2.4 + beatKick * 1.45;
-  matCaramelGlow.emissiveIntensity = 1.9 + beatKick * 1.1;
-  vaultRustLight.intensity = (collectedSet.size === ANIEZE_PRODUCTS.length ? 85 : 54) + beatKick * 20;
+  activeSet.beatPulse(beatKick, collectedSet.size === getVisibleProducts().length && getVisibleProducts().length > 0);
 
   if (mode === 'tour') {
-    let pos, look;
-    if (IS_VERTICAL || window.innerHeight > window.innerWidth) {
-      const sample = sampleVerticalCamera(t);
-      pos = sample.pos;
-      look = sample.look;
-    } else {
-      const u = Math.min(1, Math.max(0, t / TOUR_DURATION));
-      pos = camPath.getPointAt(u);
-      look = lookPath.getPointAt(u);
-    }
+    VIDEO_SYNC_TRIGGERS.forEach((tr) => {
+      if (t >= tr.t && !triggeredSyncs.has(tr.id)) {
+        triggeredSyncs.add(tr.id);
+        const node = productNodes.get(tr.id);
+        if (node && node.videoEl && node.group.visible) {
+          try {
+            node.videoEl.currentTime = 0;
+            node.videoEl.play().catch(() => {});
+          } catch {}
+        }
+      }
+    });
 
-    const gaitY = Math.sin(t * 4.2) * 0.012 + beatKick * 0.010;
-    const gaitX = Math.cos(t * 2.1) * 0.008;
+    const sample = sampleCinemaCamera(t);
+    const pos = sample.pos;
+    const look = sample.look;
+
+    const gaitY = Math.sin(t * 3.2) * 0.011 + beatKick * 0.008;
+    const gaitX = Math.cos(t * 1.6) * 0.007;
     camera.position.set(pos.x + gaitX, pos.y + gaitY, pos.z);
     camera.lookAt(look);
 
     if (!CLEAN_SHOT) {
       elCinemaOverlay.classList.add('visible');
       const activeBeat = CINEMA_BEATS.find(b => t >= b.t0 && t <= b.t1);
-      if (activeBeat) {
+      const beatHidden = activeBeat?.slug && productNodes.get(activeBeat.slug)?.group.visible === false;
+      if (activeBeat && !beatHidden) {
         elCinemaZone.textContent = activeBeat.zone;
         elCinemaEyebrow.textContent = activeBeat.eyebrow;
         elCinemaTitle.textContent = activeBeat.title;
@@ -1015,7 +1002,7 @@ function updateSceneAtTime(t) {
       } else {
         elCinemaCard.classList.remove('show');
       }
-      elCinemaEndcard.classList.toggle('show', t >= ACTIVE_DURATION - 2.6);
+      elCinemaEndcard.classList.toggle('show', t >= ACTIVE_DURATION - 3.5);
     } else {
       elCinemaOverlay.classList.remove('visible');
       elCinemaEndcard.classList.remove('show');
@@ -1026,9 +1013,13 @@ function updateSceneAtTime(t) {
 window.__setRenderTime = (t) => {
   mode = 'tour';
   tourTime = t;
+  window.__tourTime = tourTime;
+  window.__tourDone = tourTime >= ACTIVE_DURATION;
   updateSceneAtTime(t);
   renderer.render(scene, camera);
 };
+window.__tourTime = 0;
+window.__tourDone = false;
 window.__atelierReady = true;
 
 const clock = new THREE.Clock();
@@ -1041,10 +1032,13 @@ function animate() {
   if (mode === 'tour') {
     tourTime += dt;
     if (IS_AUTOPLAY) {
-      if (tourTime > ACTIVE_DURATION) tourTime = ACTIVE_DURATION;
+      if (tourTime >= ACTIVE_DURATION) tourTime = ACTIVE_DURATION;
     } else if (tourTime > ACTIVE_DURATION + 0.5) {
       tourTime = 0;
+      triggeredSyncs.clear();
     }
+    window.__tourTime = tourTime;
+    window.__tourDone = tourTime >= ACTIVE_DURATION;
     updateSceneAtTime(tourTime);
   } else {
     updateSceneAtTime(elapsed);
